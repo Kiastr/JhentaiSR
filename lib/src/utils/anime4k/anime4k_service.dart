@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:eros_fe/utils/logger.dart';
+import 'package:jhentai/src/service/log.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
@@ -37,7 +37,7 @@ class Anime4KService {
         await cacheDirectory.create(recursive: true);
       }
     } catch (e) {
-      logger.e('Anime4K cache init error: $e');
+      log.e('Anime4K cache init error: $e');
     }
   }
 
@@ -72,7 +72,7 @@ class Anime4KService {
       final file = File(cachePath);
       await file.writeAsBytes(data);
     } catch (e) {
-      logger.e('Anime4K cache save error: $e');
+      log.e('Anime4K cache save error: $e');
     }
   }
 
@@ -97,20 +97,20 @@ class Anime4KService {
     // 优先从缓存读取
     final cached = await _getFromCache(fullKey);
     if (cached != null) {
-      logger.d('Anime4K: cache hit for $cacheKey');
+      log.d('Anime4K: cache hit for $cacheKey');
       return cached;
     }
 
     // 防止重复处理同一图片
     if (_processingKeys.contains(fullKey)) {
-      logger.d('Anime4K: already processing $cacheKey');
+      log.d('Anime4K: already processing $cacheKey');
       return null;
     }
 
     _processingKeys.add(fullKey);
 
     try {
-      logger.d('Anime4K: processing image $cacheKey, '
+      log.d('Anime4K: processing image $cacheKey, '
           'scale: $scaleFactor, push: $pushStrength, grad: $pushGradStrength');
 
       final params = Anime4KParams(
@@ -125,12 +125,12 @@ class Anime4KService {
       if (result != null) {
         // 保存到缓存
         await _saveToCache(fullKey, result);
-        logger.d('Anime4K: processing complete for $cacheKey');
+        log.d('Anime4K: processing complete for $cacheKey');
       }
 
       return result;
     } catch (e) {
-      logger.e('Anime4K processing error: $e');
+      log.e('Anime4K processing error: $e');
       return null;
     } finally {
       _processingKeys.remove(fullKey);
@@ -159,7 +159,7 @@ class Anime4KService {
         pushGradStrength: pushGradStrength,
       );
     } catch (e) {
-      logger.e('Anime4K file processing error: $e');
+      log.e('Anime4K file processing error: $e');
       return null;
     }
   }
@@ -173,9 +173,9 @@ class Anime4KService {
         await dir.delete(recursive: true);
         await dir.create(recursive: true);
       }
-      logger.d('Anime4K: cache cleared');
+      log.d('Anime4K: cache cleared');
     } catch (e) {
-      logger.e('Anime4K cache clear error: $e');
+      log.e('Anime4K cache clear error: $e');
     }
   }
 
