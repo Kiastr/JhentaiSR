@@ -1,19 +1,48 @@
 name: JHenTai Build
-on: [push, workflow_dispatch]
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with: {distribution: 'zulu', java-version: '17'}
-      - uses: subosito/flutter-action@v2
-        with: {flutter-version: '3.27.4', channel: 'stable', cache: true}
-      - run: |
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.4'
+          channel: 'stable'
+          cache: true
+
+      - name: Clean and Get dependencies
+        run: |
           flutter clean
           rm -f pubspec.lock
           flutter pub get
-          dart run build_runner build --delete-conflicting-outputs
-          flutter build apk --release -t lib/src/main.dart
-      - uses: actions/upload-artifact@v4
-        with: {name: jhentai-apk, path: build/app/outputs/flutter-apk/app-release.apk}
+
+      - name: Build Runner
+        run: |
+          if grep -q "build_runner" pubspec.yaml; then
+            # 增加 --delete-conflicting-outputs 强制覆盖，并尝试直接运行 dart run
+            dart run build_runner build --delete-conflicting-outputs
+          fi
+
+      - name: Build APK
+        run: flutter build apk --release -t lib/src/main.dart
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: jhentai-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
