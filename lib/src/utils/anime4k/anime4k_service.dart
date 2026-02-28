@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -26,6 +27,15 @@ class Anime4KService {
 
   /// 正在处理的任务集合（避免重复处理同一图片）
   final Set<String> _processingKeys = {};
+
+  /// 最大并发处理数
+  static const int _maxConcurrentTasks = 2;
+
+  /// 当前正在运行的任务数
+  int _runningTasks = 0;
+
+  /// 任务队列
+  final List<Function> _taskQueue = [];
 
   /// 初始化缓存目录
   Future<void> init() async {
@@ -109,31 +119,62 @@ class Anime4KService {
 
     _processingKeys.add(fullKey);
 
-    try {
-      log.debug('Anime4K: processing image $cacheKey, '
-          'scale: $scaleFactor, push: $pushStrength, grad: $pushGradStrength');
+    return _enqueueTask(() async {
+      try {
+        log.debug('Anime4K: processing image $cacheKey, '
+            'scale: $scaleFactor, push: $pushStrength, grad: $pushGradStrength');
 
-      final params = Anime4KParams(
-        imageBytes: imageBytes,
-        pushStrength: pushStrength,
-        pushGradStrength: pushGradStrength,
-        scaleFactor: scaleFactor,
-      );
+        final params = Anime4KParams(
+          imageBytes: imageBytes,
+          pushStrength: pushStrength,
+          pushGradStrength: pushGradStrength,
+          scaleFactor: scaleFactor,
+        );
 
-      final result = await Anime4KUpscaler.processInIsolate(params);
+        final result = await Anime4KUpscaler.processInIsolate(params);
 
-      if (result != null) {
-        // 保存到缓存
-        await _saveToCache(fullKey, result);
-        log.debug('Anime4K: processing complete for $cacheKey');
+        if (result != null) {
+          // 保存到缓存
+          await _saveToCache(fullKey, result);
+          log.debug('Anime4K: processing complete for $cacheKey');
+        }
+
+        return result;
+      } catch (e) {
+        log.error('Anime4K processing error: $e');
+        return null;
+      } finally {
+        _processingKeys.remove(fullKey);
       }
+    });
+  }
 
-      return result;
-    } catch (e) {
-      log.error('Anime4K processing error: $e');
-      return null;
-    } finally {
-      _processingKeys.remove(fullKey);
+  /// 将任务加入队列并按序执行
+  Future<T?> _enqueueTask<T>(Future<T?> Function() task) async {
+    final completer = Completer<T?>();
+
+    _taskQueue.add(() async {
+      _runningTasks++;
+      try {
+        final result = await task();
+        completer.complete(result);
+      } catch (e) {
+        completer.completeError(e);
+      } finally {
+        _runningTasks--;
+        _nextTask();
+      }
+    });
+
+    _nextTask();
+    return completer.future;
+  }
+
+  /// 执行下一个任务
+  void _nextTask() {
+    if (_runningTasks < _maxConcurrentTasks && _taskQueue.isNotEmpty) {
+      final task = _taskQueue.removeAt(0);
+      task();
     }
   }
 

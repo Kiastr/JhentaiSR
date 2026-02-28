@@ -203,25 +203,24 @@ class Anime4KUpscaler {
   ) {
     strength = strength.clamp(0, 255);
 
-    for (int id = 0; id < width * height; id++) {
-      final int x = id % width;
-      final int y = id ~/ width;
-
-      // 边界处理
-      final int xn = x == 0 ? 0 : -1;
-      final int xp = x == width - 1 ? 0 : 1;
+    for (int y = 0; y < height; y++) {
       final int yn = y == 0 ? 0 : -width;
       final int yp = y == height - 1 ? 0 : width;
 
-      // 邻域索引
-      final int ti = id + yn;
-      final int tli = ti + xn;
-      final int tri = ti + xp;
-      final int li = id + xn;
-      final int ri = id + xp;
-      final int bi = id + yp;
-      final int bli = bi + xn;
-      final int bri = bi + xp;
+      for (int x = 0; x < width; x++) {
+        final int id = y * width + x;
+        final int xn = x == 0 ? 0 : -1;
+        final int xp = x == width - 1 ? 0 : 1;
+
+        // 邻域索引
+        final int ti = id + yn;
+        final int tli = ti + xn;
+        final int tri = ti + xp;
+        final int li = id + xn;
+        final int ri = id + xp;
+        final int bi = id + yp;
+        final int bli = bi + xn;
+        final int bri = bi + xp;
 
       int lightestColor = srcColor[id];
       int lightestLum = srcLum[id];
@@ -315,23 +314,23 @@ class Anime4KUpscaler {
     int width,
     int height,
   ) {
-    for (int id = 0; id < width * height; id++) {
-      final int x = id % width;
-      final int y = id ~/ width;
-
-      final int xn = x == 0 ? 0 : -1;
-      final int xp = x == width - 1 ? 0 : 1;
+    for (int y = 0; y < height; y++) {
       final int yn = y == 0 ? 0 : -width;
       final int yp = y == height - 1 ? 0 : width;
 
-      final int topi = id + yn;
-      final int topLefti = topi + xn;
-      final int topRighti = topi + xp;
-      final int lefti = id + xn;
-      final int righti = id + xp;
-      final int bottomi = id + yp;
-      final int bottomLefti = bottomi + xn;
-      final int bottomRighti = bottomi + xp;
+      for (int x = 0; x < width; x++) {
+        final int id = y * width + x;
+        final int xn = x == 0 ? 0 : -1;
+        final int xp = x == width - 1 ? 0 : 1;
+
+        final int topi = id + yn;
+        final int topLefti = topi + xn;
+        final int topRighti = topi + xp;
+        final int lefti = id + xn;
+        final int righti = id + xp;
+        final int bottomi = id + yp;
+        final int bottomLefti = bottomi + xn;
+        final int bottomRighti = bottomi + xp;
 
       final int topLeft = srcLum[topLefti];
       final int top = srcLum[topi];
@@ -373,23 +372,23 @@ class Anime4KUpscaler {
   ) {
     strength = strength.clamp(0, 255);
 
-    for (int id = 0; id < width * height; id++) {
-      final int x = id % width;
-      final int y = id ~/ width;
-
-      final int xn = x == 0 ? 0 : -1;
-      final int xp = x == width - 1 ? 0 : 1;
+    for (int y = 0; y < height; y++) {
       final int yn = y == 0 ? 0 : -width;
       final int yp = y == height - 1 ? 0 : width;
 
-      final int ti = id + yn;
-      final int tli = ti + xn;
-      final int tri = ti + xp;
-      final int li = id + xn;
-      final int ri = id + xp;
-      final int bi = id + yp;
-      final int bli = bi + xn;
-      final int bri = bi + xp;
+      for (int x = 0; x < width; x++) {
+        final int id = y * width + x;
+        final int xn = x == 0 ? 0 : -1;
+        final int xp = x == width - 1 ? 0 : 1;
+
+        final int ti = id + yn;
+        final int tli = ti + xn;
+        final int tri = ti + xp;
+        final int li = id + xn;
+        final int ri = id + xp;
+        final int bi = id + yp;
+        final int bli = bi + xn;
+        final int bri = bi + xp;
 
       bool pushed = false;
 

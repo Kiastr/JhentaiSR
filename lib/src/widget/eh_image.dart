@@ -253,49 +253,6 @@ class _EHImageState extends State<EHImage> {
 
     String filePath = GalleryDownloadService.computeImageDownloadAbsolutePathFromRelativePath(widget.galleryImage.path!);
 
-    if (readSetting.enableAnime4K.isTrue) {
-      return FutureBuilder<Uint8List?>(
-        future: Anime4KService.instance.processFile(
-          filePath: filePath,
-          scaleFactor: readSetting.anime4KScaleFactor.value,
-          pushStrength: readSetting.anime4KPushStrength.value,
-          pushGradStrength: readSetting.anime4KPushGradStrength.value,
-        ),
-        builder: (context, snapshot) {
-          if (snapshot.hasData && snapshot.data != null) {
-            return ExtendedImage.memory(
-              snapshot.data!,
-              fit: widget.fit,
-              height: widget.containerHeight,
-              width: widget.containerWidth,
-              enableSlideOutPage: widget.enableSlideOutPage,
-              clearMemoryCacheWhenDispose: widget.clearMemoryCacheWhenDispose,
-              loadStateChanged: (ExtendedImageState state) {
-                if (state.extendedImageLoadState == LoadState.completed) {
-                  state.returnLoadStateChangedWidget = true;
-                  Widget child = widget.completedWidgetBuilder?.call(state) ?? _buildExtendedRawImage(state);
-                  if (widget.borderRadius != BorderRadius.zero) {
-                    child = ClipRRect(child: child, borderRadius: widget.borderRadius);
-                  }
-                  if (state.slidePageState != null) {
-                    child = ExtendedImageSlidePageHandler(child: child, extendedImageSlidePageState: state.slidePageState);
-                  }
-                  return Center(
-                    child: Container(
-                      decoration: BoxDecoration(boxShadow: widget.shadows, borderRadius: widget.borderRadius),
-                      child: child,
-                    ),
-                  );
-                }
-                return null;
-              },
-            );
-          }
-          return _buildRawFileImage(context, filePath);
-        },
-      );
-    }
-
     return _buildRawFileImage(context, filePath);
   }
 
@@ -320,6 +277,10 @@ class _EHImageState extends State<EHImage> {
                   child: GestureDetector(child: const Icon(Icons.sentiment_very_dissatisfied), onTap: state.reLoadImage),
                 );
           case LoadState.completed:
+            if (readSetting.enableAnime4K.isTrue) {
+              _triggerFileImageUpscale(filePath);
+            }
+
             state.returnLoadStateChangedWidget = true;
 
             Widget child = widget.completedWidgetBuilder?.call(state) ?? _buildExtendedRawImage(state);
@@ -345,6 +306,27 @@ class _EHImageState extends State<EHImage> {
       maxBytes: widget.maxBytes,
       filterQuality: FilterQuality.medium,
     );
+  }
+
+  Future<void> _triggerFileImageUpscale(String filePath) async {
+    if (_upscaledBytes != null || _isUpscaling) return;
+
+    _isUpscaling = true;
+    final result = await Anime4KService.instance.processFile(
+      filePath: filePath,
+      scaleFactor: readSetting.anime4KScaleFactor.value,
+      pushStrength: readSetting.anime4KPushStrength.value,
+      pushGradStrength: readSetting.anime4KPushGradStrength.value,
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _upscaledBytes = result;
+        _isUpscaling = false;
+      });
+    } else {
+      _isUpscaling = false;
+    }
   }
 
   double _computeLoadingProgress(ImageChunkEvent? loadingProgress, ImageInfo? extendedImageInfo) {
