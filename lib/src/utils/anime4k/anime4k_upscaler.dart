@@ -222,86 +222,87 @@ class Anime4KUpscaler {
         final int bli = bi + xn;
         final int bri = bi + xp;
 
-      int lightestColor = srcColor[id];
-      int lightestLum = srcLum[id];
+        int lightestColor = srcColor[id];
+        int lightestLum = srcLum[id];
 
-      // 检查8个方向的核
-      for (int k = 0; k < 8; k++) {
-        late int di0, di1, di2;
-        late int li0, li1, li2;
-        int li3 = id;
-        bool l4 = false;
+        // 检查8个方向的核
+        for (int k = 0; k < 8; k++) {
+          late int di0, di1, di2;
+          late int li0, li1, li2;
+          int li3 = id;
+          bool l4 = false;
 
-        switch (k) {
-          case 0:
-            di0 = tli; di1 = ti; di2 = tri;
-            li0 = id; li1 = bli; li2 = bi; li3 = bri; l4 = true;
-            break;
-          case 1:
-            di0 = ti; di1 = tri; di2 = ri;
-            li0 = id; li1 = li; li2 = bi; l4 = false;
-            break;
-          case 2:
-            di0 = tri; di1 = ri; di2 = bri;
-            li0 = id; li1 = tli; li2 = li; li3 = bli; l4 = true;
-            break;
-          case 3:
-            di0 = ri; di1 = bri; di2 = bi;
-            li0 = id; li1 = ti; li2 = li; l4 = false;
-            break;
-          case 4:
-            di0 = bli; di1 = bi; di2 = bri;
-            li0 = id; li1 = tli; li2 = ti; li3 = tri; l4 = true;
-            break;
-          case 5:
-            di0 = li; di1 = bli; di2 = bi;
-            li0 = id; li1 = ti; li2 = ri; l4 = false;
-            break;
-          case 6:
-            di0 = tli; di1 = li; di2 = bli;
-            li0 = id; li1 = tri; li2 = ri; li3 = bri; l4 = true;
-            break;
-          case 7:
-            di0 = tli; di1 = ti; di2 = li;
-            li0 = id; li1 = bi; li2 = ri; l4 = false;
-            break;
-        }
+          switch (k) {
+            case 0:
+              di0 = tli; di1 = ti; di2 = tri;
+              li0 = id; li1 = bli; li2 = bi; li3 = bri; l4 = true;
+              break;
+            case 1:
+              di0 = ti; di1 = tri; di2 = ri;
+              li0 = id; li1 = li; li2 = bi; l4 = false;
+              break;
+            case 2:
+              di0 = tri; di1 = ri; di2 = bri;
+              li0 = id; li1 = tli; li2 = li; li3 = bli; l4 = true;
+              break;
+            case 3:
+              di0 = ri; di1 = bri; di2 = bi;
+              li0 = id; li1 = ti; li2 = li; l4 = false;
+              break;
+            case 4:
+              di0 = bli; di1 = bi; di2 = bri;
+              li0 = id; li1 = tli; li2 = ti; li3 = tri; l4 = true;
+              break;
+            case 5:
+              di0 = li; di1 = bli; di2 = bi;
+              li0 = id; li1 = ti; li2 = ri; l4 = false;
+              break;
+            case 6:
+              di0 = tli; di1 = li; di2 = bli;
+              li0 = id; li1 = tri; li2 = ri; li3 = bri; l4 = true;
+              break;
+            case 7:
+              di0 = tli; di1 = ti; di2 = li;
+              li0 = id; li1 = bi; li2 = ri; l4 = false;
+              break;
+          }
 
-        final int d0 = srcLum[di0];
-        final int d1 = srcLum[di1];
-        final int d2 = srcLum[di2];
-        final int lv0 = srcLum[li0];
-        final int lv1 = srcLum[li1];
-        final int lv2 = srcLum[li2];
+          final int d0 = srcLum[di0];
+          final int d1 = srcLum[di1];
+          final int d2 = srcLum[di2];
+          final int lv0 = srcLum[li0];
+          final int lv1 = srcLum[li1];
+          final int lv2 = srcLum[li2];
 
-        bool match;
-        if (l4) {
-          final int lv3 = srcLum[li3];
-          match = !_compareLum4(d0, d1, d2, lv0, lv1, lv2, lv3);
-        } else {
-          match = !_compareLum3(d0, d1, d2, lv0, lv1, lv2);
-        }
+          bool match;
+          if (l4) {
+            final int lv3 = srcLum[li3];
+            match = !_compareLum4(d0, d1, d2, lv0, lv1, lv2, lv3);
+          } else {
+            match = !_compareLum3(d0, d1, d2, lv0, lv1, lv2);
+          }
 
-        if (match) {
-          final int newColor = _weightedAverageRGB(
-            srcColor[id],
-            _averageRGB(srcColor[di0], srcColor[di1], srcColor[di2]),
-            strength,
-          );
-          final int newLum = _getLuminance(
-            _getRed(newColor),
-            _getGreen(newColor),
-            _getBlue(newColor),
-          );
-          if (newLum > lightestLum) {
-            lightestLum = newLum;
-            lightestColor = newColor;
+          if (match) {
+            final int newColor = _weightedAverageRGB(
+              srcColor[id],
+              _averageRGB(srcColor[di0], srcColor[di1], srcColor[di2]),
+              strength,
+            );
+            final int newLum = _getLuminance(
+              _getRed(newColor),
+              _getGreen(newColor),
+              _getBlue(newColor),
+            );
+            if (newLum > lightestLum) {
+              lightestLum = newLum;
+              lightestColor = newColor;
+            }
           }
         }
-      }
 
-      dstColor[id] = lightestColor;
-      dstLum[id] = lightestLum.clamp(0, 255);
+        dstColor[id] = lightestColor;
+        dstLum[id] = lightestLum.clamp(0, 255);
+      }
     }
   }
 
@@ -332,31 +333,32 @@ class Anime4KUpscaler {
         final int bottomLefti = bottomi + xn;
         final int bottomRighti = bottomi + xp;
 
-      final int topLeft = srcLum[topLefti];
-      final int top = srcLum[topi];
-      final int topRight = srcLum[topRighti];
-      final int left = srcLum[lefti];
-      final int right = srcLum[righti];
-      final int bottomLeft = srcLum[bottomLefti];
-      final int bottom = srcLum[bottomi];
-      final int bottomRight = srcLum[bottomRighti];
+        final int topLeft = srcLum[topLefti];
+        final int top = srcLum[topi];
+        final int topRight = srcLum[topRighti];
+        final int left = srcLum[lefti];
+        final int right = srcLum[righti];
+        final int bottomLeft = srcLum[bottomLefti];
+        final int bottom = srcLum[bottomi];
+        final int bottomRight = srcLum[bottomRighti];
 
-      // Sobel 算子
-      final int xSobel =
-          (-topLeft + topRight - left - left + right + right - bottomLeft +
-                  bottomRight)
-              .abs();
-      final int ySobel =
-          (-topLeft - top - top - topRight + bottomLeft + bottom + bottom +
-                  bottomRight)
-              .abs();
+        // Sobel 算子
+        final int xSobel =
+            (-topLeft + topRight - left - left + right + right - bottomLeft +
+                    bottomRight)
+                .abs();
+        final int ySobel =
+            (-topLeft - top - top - topRight + bottomLeft + bottom + bottom +
+                    bottomRight)
+                .abs();
 
-      final int deriv = math.sqrt(xSobel * xSobel + ySobel * ySobel)
-          .round()
-          .clamp(0, 255);
+        final int deriv = math.sqrt(xSobel * xSobel + ySobel * ySobel)
+            .round()
+            .clamp(0, 255);
 
-      dstLum[id] = deriv;
-      dstColor[id] = srcColor[id];
+        dstLum[id] = deriv;
+        dstColor[id] = srcColor[id];
+      }
     }
   }
 
@@ -390,83 +392,84 @@ class Anime4KUpscaler {
         final int bli = bi + xn;
         final int bri = bi + xp;
 
-      bool pushed = false;
+        bool pushed = false;
 
-      for (int k = 0; k < 8; k++) {
-        late int di0, di1, di2;
-        late int lvi0, lvi1, lvi2;
-        int lvi3 = id;
-        bool l4 = false;
+        for (int k = 0; k < 8; k++) {
+          late int di0, di1, di2;
+          late int lvi0, lvi1, lvi2;
+          int lvi3 = id;
+          bool l4 = false;
 
-        switch (k) {
-          case 0:
-            di0 = tli; di1 = ti; di2 = tri;
-            lvi0 = id; lvi1 = bli; lvi2 = bi; lvi3 = bri; l4 = true;
+          switch (k) {
+            case 0:
+              di0 = tli; di1 = ti; di2 = tri;
+              lvi0 = id; lvi1 = bli; lvi2 = bi; lvi3 = bri; l4 = true;
+              break;
+            case 1:
+              di0 = ti; di1 = tri; di2 = ri;
+              lvi0 = id; lvi1 = li; lvi2 = bi; l4 = false;
+              break;
+            case 2:
+              di0 = tri; di1 = ri; di2 = bri;
+              lvi0 = id; lvi1 = tli; lvi2 = li; lvi3 = bli; l4 = true;
+              break;
+            case 3:
+              di0 = ri; di1 = bri; di2 = bi;
+              lvi0 = id; lvi1 = ti; lvi2 = li; l4 = false;
+              break;
+            case 4:
+              di0 = bli; di1 = bi; di2 = bri;
+              lvi0 = id; lvi1 = tli; lvi2 = ti; lvi3 = tri; l4 = true;
+              break;
+            case 5:
+              di0 = li; di1 = bli; di2 = bi;
+              lvi0 = id; lvi1 = ti; lvi2 = ri; l4 = false;
+              break;
+            case 6:
+              di0 = tli; di1 = li; di2 = bli;
+              lvi0 = id; lvi1 = tri; lvi2 = ri; lvi3 = bri; l4 = true;
+              break;
+            case 7:
+              di0 = tli; di1 = ti; di2 = li;
+              lvi0 = id; lvi1 = bi; lvi2 = ri; l4 = false;
+              break;
+          }
+
+          final int d0 = srcLum[di0];
+          final int d1 = srcLum[di1];
+          final int d2 = srcLum[di2];
+          final int lv0 = srcLum[lvi0];
+          final int lv1 = srcLum[lvi1];
+          final int lv2 = srcLum[lvi2];
+
+          bool match;
+          if (l4) {
+            final int lv3 = srcLum[lvi3];
+            match = _compareLum4(d0, d1, d2, lv0, lv1, lv2, lv3);
+          } else {
+            match = _compareLum3(d0, d1, d2, lv0, lv1, lv2);
+          }
+
+          if (match) {
+            dstLum[id] = _weightedAverageGray(
+              srcLum[id],
+              _averageGray(d0, d1, d2),
+              strength,
+            );
+            dstColor[id] = _weightedAverageRGB(
+              srcColor[id],
+              _averageRGB(srcColor[di0], srcColor[di1], srcColor[di2]),
+              strength,
+            );
+            pushed = true;
             break;
-          case 1:
-            di0 = ti; di1 = tri; di2 = ri;
-            lvi0 = id; lvi1 = li; lvi2 = bi; l4 = false;
-            break;
-          case 2:
-            di0 = tri; di1 = ri; di2 = bri;
-            lvi0 = id; lvi1 = tli; lvi2 = li; lvi3 = bli; l4 = true;
-            break;
-          case 3:
-            di0 = ri; di1 = bri; di2 = bi;
-            lvi0 = id; lvi1 = ti; lvi2 = li; l4 = false;
-            break;
-          case 4:
-            di0 = bli; di1 = bi; di2 = bri;
-            lvi0 = id; lvi1 = tli; lvi2 = ti; lvi3 = tri; l4 = true;
-            break;
-          case 5:
-            di0 = li; di1 = bli; di2 = bi;
-            lvi0 = id; lvi1 = ti; lvi2 = ri; l4 = false;
-            break;
-          case 6:
-            di0 = tli; di1 = li; di2 = bli;
-            lvi0 = id; lvi1 = tri; lvi2 = ri; lvi3 = bri; l4 = true;
-            break;
-          case 7:
-            di0 = tli; di1 = ti; di2 = li;
-            lvi0 = id; lvi1 = bi; lvi2 = ri; l4 = false;
-            break;
+          }
         }
 
-        final int d0 = srcLum[di0];
-        final int d1 = srcLum[di1];
-        final int d2 = srcLum[di2];
-        final int lv0 = srcLum[lvi0];
-        final int lv1 = srcLum[lvi1];
-        final int lv2 = srcLum[lvi2];
-
-        bool match;
-        if (l4) {
-          final int lv3 = srcLum[lvi3];
-          match = _compareLum4(d0, d1, d2, lv0, lv1, lv2, lv3);
-        } else {
-          match = _compareLum3(d0, d1, d2, lv0, lv1, lv2);
+        if (!pushed) {
+          dstLum[id] = srcLum[id];
+          dstColor[id] = srcColor[id];
         }
-
-        if (match) {
-          dstLum[id] = _weightedAverageGray(
-            srcLum[id],
-            _averageGray(d0, d1, d2),
-            strength,
-          );
-          dstColor[id] = _weightedAverageRGB(
-            srcColor[id],
-            _averageRGB(srcColor[di0], srcColor[di1], srcColor[di2]),
-            strength,
-          );
-          pushed = true;
-          break;
-        }
-      }
-
-      if (!pushed) {
-        dstLum[id] = srcLum[id];
-        dstColor[id] = srcColor[id];
       }
     }
   }
