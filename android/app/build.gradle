@@ -62,10 +62,13 @@ android {
         }
     }
 
-    /// If you want to use debug signing config, use default [signingConfigs.debug]
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            if (keystoreProperties['storeFile'] != null && file(keystoreProperties['storeFile']).exists()) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
         }
     }
 }
