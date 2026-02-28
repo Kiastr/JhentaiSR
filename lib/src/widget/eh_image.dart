@@ -219,7 +219,7 @@ class _EHImageState extends State<EHImage> {
   Future<void> _triggerNetworkImageUpscale(ExtendedImageState state) async {
     if (_upscaledBytes != null || _isUpscaling) return;
 
-    final File? file = await getCachedImageFile(widget.galleryImage.url);
+    final io.File? file = await getCachedImageFile(widget.galleryImage.url);
     if (file == null) return;
 
     _isUpscaling = true;
@@ -308,7 +308,7 @@ class _EHImageState extends State<EHImage> {
       enableLoadState: widget.loadingWidgetBuilder != null || widget.failedWidgetBuilder != null || widget.completedWidgetBuilder != null,
       enableSlideOutPage: widget.enableSlideOutPage,
       borderRadius: widget.borderRadius,
-      shape: widget.borderRadius != null ? BoxShape.rectangle : null,
+      shape: widget.borderRadius != BorderRadius.zero ? BoxShape.rectangle : BoxShape.rectangle,
       clearMemoryCacheWhenDispose: widget.clearMemoryCacheWhenDispose,
       loadStateChanged: (ExtendedImageState state) {
         switch (state.extendedImageLoadState) {
@@ -324,7 +324,7 @@ class _EHImageState extends State<EHImage> {
 
             Widget child = widget.completedWidgetBuilder?.call(state) ?? _buildExtendedRawImage(state);
 
-            if (widget.borderRadius != null) {
+            if (widget.borderRadius != BorderRadius.zero) {
               child = ClipRRect(child: child, borderRadius: widget.borderRadius);
             }
 
@@ -372,9 +372,9 @@ class _EHImageState extends State<EHImage> {
 
   Widget _buildExtendedRawImage(ExtendedImageState state) {
     FittedSizes fittedSizes = applyBoxFit(
-      fit,
+      widget.fit,
       Size(state.extendedImageInfo!.image.width.toDouble(), state.extendedImageInfo!.image.height.toDouble()),
-      Size(containerWidth ?? double.infinity, containerHeight ?? double.infinity),
+      Size(widget.containerWidth ?? double.infinity, widget.containerHeight ?? double.infinity),
     );
 
     return ExtendedRawImage(
@@ -382,7 +382,7 @@ class _EHImageState extends State<EHImage> {
       height: fittedSizes.destination.height == 0 ? null : fittedSizes.destination.height,
       width: fittedSizes.destination.width == 0 ? null : fittedSizes.destination.width,
       scale: state.extendedImageInfo?.scale ?? 1.0,
-      fit: fit,
+      fit: widget.fit,
     );
   }
 }

@@ -37,7 +37,7 @@ class Anime4KService {
         await cacheDirectory.create(recursive: true);
       }
     } catch (e) {
-      log.e('Anime4K cache init error: $e');
+      log.error('Anime4K cache init error: $e');
     }
   }
 
@@ -72,7 +72,7 @@ class Anime4KService {
       final file = File(cachePath);
       await file.writeAsBytes(data);
     } catch (e) {
-      log.e('Anime4K cache save error: $e');
+      log.error('Anime4K cache save error: $e');
     }
   }
 
@@ -97,20 +97,20 @@ class Anime4KService {
     // 优先从缓存读取
     final cached = await _getFromCache(fullKey);
     if (cached != null) {
-      log.d('Anime4K: cache hit for $cacheKey');
+      log.debug('Anime4K: cache hit for $cacheKey');
       return cached;
     }
 
     // 防止重复处理同一图片
     if (_processingKeys.contains(fullKey)) {
-      log.d('Anime4K: already processing $cacheKey');
+      log.debug('Anime4K: already processing $cacheKey');
       return null;
     }
 
     _processingKeys.add(fullKey);
 
     try {
-      log.d('Anime4K: processing image $cacheKey, '
+      log.debug('Anime4K: processing image $cacheKey, '
           'scale: $scaleFactor, push: $pushStrength, grad: $pushGradStrength');
 
       final params = Anime4KParams(
@@ -125,12 +125,12 @@ class Anime4KService {
       if (result != null) {
         // 保存到缓存
         await _saveToCache(fullKey, result);
-        log.d('Anime4K: processing complete for $cacheKey');
+        log.debug('Anime4K: processing complete for $cacheKey');
       }
 
       return result;
     } catch (e) {
-      log.e('Anime4K processing error: $e');
+      log.error('Anime4K processing error: $e');
       return null;
     } finally {
       _processingKeys.remove(fullKey);
@@ -159,7 +159,7 @@ class Anime4KService {
         pushGradStrength: pushGradStrength,
       );
     } catch (e) {
-      log.e('Anime4K file processing error: $e');
+      log.error('Anime4K file processing error: $e');
       return null;
     }
   }
@@ -173,9 +173,9 @@ class Anime4KService {
         await dir.delete(recursive: true);
         await dir.create(recursive: true);
       }
-      log.d('Anime4K: cache cleared');
+      log.debug('Anime4K: cache cleared');
     } catch (e) {
-      log.e('Anime4K cache clear error: $e');
+      log.error('Anime4K cache clear error: $e');
     }
   }
 
