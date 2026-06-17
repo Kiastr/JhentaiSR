@@ -7,10 +7,9 @@ using System;
 namespace ColorfulSoft.DeOldify
 {
 
-#if half
-
     // Adapted from this: https://sourceforge.net/projects/csharp-half/
-
+    // Note: Previously wrapped in #if half, but now always compiled so that
+    // LoadTensor can reference it at runtime based on the UseHalfPrecision flag.
     ///<summary>Half to Float conversion.</summary>
     internal static class HalfHelper
     {
@@ -92,7 +91,5 @@ namespace ColorfulSoft.DeOldify
         }
 
     }
-
-#endif
 
 }
