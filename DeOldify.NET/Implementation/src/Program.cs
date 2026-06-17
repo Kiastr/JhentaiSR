@@ -30,40 +30,68 @@ namespace ColorfulSoft.DeOldify
                     string modelType = args[2]; // "stable" or "artistic"
                     string modelDirectory = args.Length >= 4 ? args[3] : "";
 
+                    Console.Out.WriteLine("DeOldify CLI: modelType=" + modelType + ", modelDirectory=" + modelDirectory);
+
                     // Try to find model file in the specified directory
                     string modelPath = null;
-                    if(!string.IsNullOrEmpty(modelDirectory) && Directory.Exists(modelDirectory))
+                    if(!string.IsNullOrEmpty(modelDirectory))
                     {
-                        // Try .model first (float), then .hmodel (half)
-                        string[] modelFiles = Directory.GetFiles(modelDirectory, "*" + modelType + "*.model");
-                        if(modelFiles.Length == 0)
+                        // Search in the directory itself and all subdirectories
+                        string[] searchPaths = new string[] { modelDirectory, Path.Combine(modelDirectory, "models") };
+
+                        // Possible model file names (case-insensitive search)
+                        string[] modelFilePatterns = new string[]
                         {
-                            modelFiles = Directory.GetFiles(modelDirectory, "*" + modelType + "*.hmodel");
-                        }
-                        if(modelFiles.Length == 0)
+                            "Colorize" + char.ToUpper(modelType[0]) + modelType.Substring(1) + "_gen.model",
+                            "Colorize" + char.ToUpper(modelType[0]) + modelType.Substring(1) + "_gen.hmodel",
+                            "*" + modelType + "*.model",
+                            "*" + modelType + "*.hmodel",
+                            "*.model",
+                            "*.hmodel"
+                        };
+
+                        foreach(string searchPath in searchPaths)
                         {
-                            // Try exact filenames
-                            string exactModel = Path.Combine(modelDirectory, "Colorize" + char.ToUpper(modelType[0]) + modelType.Substring(1) + "_gen.model");
-                            if(File.Exists(exactModel))
+                            if(!Directory.Exists(searchPath))
                             {
-                                modelPath = exactModel;
+                                continue;
                             }
-                            else
+
+                            Console.Out.WriteLine("DeOldify CLI: searching in: " + searchPath);
+
+                            // List all files for debugging
+                            string[] allFiles = Directory.GetFiles(searchPath);
+                            Console.Out.WriteLine("DeOldify CLI: files in directory: " + string.Join(", ", allFiles));
+
+                            foreach(string pattern in modelFilePatterns)
                             {
-                                string exactHModel = Path.Combine(modelDirectory, "Colorize" + char.ToUpper(modelType[0]) + modelType.Substring(1) + "_gen.hmodel");
-                                if(File.Exists(exactHModel))
+                                string[] found = Directory.GetFiles(searchPath, pattern, SearchOption.TopDirectoryOnly);
+                                if(found.Length > 0)
                                 {
-                                    modelPath = exactHModel;
+                                    modelPath = found[0];
+                                    Console.Out.WriteLine("DeOldify CLI: found model: " + modelPath);
+                                    break;
                                 }
                             }
-                        }
-                        else
-                        {
-                            modelPath = modelFiles[0];
+
+                            if(modelPath != null)
+                            {
+                                break;
+                            }
                         }
                     }
 
-                    // Initialize with external model file (or embedded if not found)
+                    if(modelPath == null)
+                    {
+                        throw new FileNotFoundException(
+                            "Model file not found. Searched in: " + modelDirectory +
+                            " (and models/ subdirectory). Please download model files from " +
+                            "https://github.com/ColorfulSoft/DeOldify.NET/releases/tag/Weights " +
+                            "and place ColorizeStable_gen.model and/or ColorizeArtistic_gen.model " +
+                            "in the model directory.");
+                    }
+
+                    // Initialize with external model file
                     DeOldify.Initialize(modelPath);
 
                     Bitmap inputBitmap = new Bitmap(args[0]);
