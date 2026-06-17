@@ -17,6 +17,34 @@ namespace ColorfulSoft.DeOldify
     {
 
         /// <summary>
+        /// Alignment boundary in bytes (16 for Vector4 SIMD compatibility).
+        /// </summary>
+        private const int Alignment = 16;
+
+        /// <summary>
+        /// Allocates aligned memory for SIMD operations. Returns the aligned pointer
+        /// and stores the original pointer via out parameter for later freeing.
+        /// </summary>
+        private static float* AllocAligned(int size, out long rawPtr)
+        {
+            int total = size + Alignment + sizeof(long);
+            IntPtr raw = Marshal.AllocHGlobal(total);
+            long rawAddr = raw.ToInt64();
+            long alignedAddr = (rawAddr + sizeof(long) + Alignment - 1) & ~(long)(Alignment - 1);
+            Marshal.WriteInt64(new IntPtr(alignedAddr - sizeof(long)), rawAddr);
+            rawPtr = rawAddr;
+            return (float*)alignedAddr;
+        }
+
+        private static void FreeAligned(long rawPtr)
+        {
+            if(rawPtr != 0)
+            {
+                Marshal.FreeHGlobal(new IntPtr(rawPtr));
+            }
+        }
+
+        /// <summary>
         /// Two-dimensional averaging pooling.
         /// </summary>
         /// <param name="x">Input data.</param>
@@ -165,71 +193,79 @@ namespace ColorfulSoft.DeOldify
                     var bias_biased = bias.Data + g * dstC;
                     Parallel.For(0, dstH, (int dy) =>
                     {
-                        var buffer = (float*)Marshal.AllocHGlobal(buf_size).ToPointer();
-                        var sy1 = dy * strideY - padY;
-                        for(int dx = 0; dx < dstW; ++dx)
+                        long rawBufPtr = 0;
+                        float* buffer = null;
+                        try
                         {
-                            var sx1 = dx * strideX - padX;
-                            var buf = buffer;
-                            for(int sc = 0; sc < srcC; ++sc)
+                            buffer = AllocAligned(buf_size, out rawBufPtr);
+                            var sy1 = dy * strideY - padY;
+                            for(int dx = 0; dx < dstW; ++dx)
                             {
-                                var src_base2 = (src_base1 + sc) * srcH;
-                                for(int ky = 0; ky < kernelY; ++ky)
+                                var sx1 = dx * strideX - padX;
+                                var buf = buffer;
+                                for(int sc = 0; sc < srcC; ++sc)
                                 {
-                                    int sy = sy1 + ky * dilationY;
-                                    if((sy < 0) || (sy >= srcH))
+                                    var src_base2 = (src_base1 + sc) * srcH;
+                                    for(int ky = 0; ky < kernelY; ++ky)
                                     {
+                                        int sy = sy1 + ky * dilationY;
+                                        if((sy < 0) || (sy >= srcH))
+                                        {
+                                            for(int kx = 0; kx < kernelX; ++kx)
+                                            {
+                                                *buf++ = 0;
+                                            }
+                                            continue;
+                                        }
+                                        var src_biased = src + (src_base2 + sy) * srcW;
                                         for(int kx = 0; kx < kernelX; ++kx)
                                         {
-                                            *buf++ = 0;
-                                        }
-                                        continue;
-                                    }
-                                    var src_biased = src + (src_base2 + sy) * srcW;
-                                    for(int kx = 0; kx < kernelX; ++kx)
-                                    {
-                                        int sx = sx1 + kx * dilationX;
-                                        if((sx >= 0) && (sx < srcW))
-                                        {
-                                            *buf++ = src_biased[sx];
-                                        }
-                                        else
-                                        {
-                                            *buf++ = 0;
+                                            int sx = sx1 + kx * dilationX;
+                                            if((sx >= 0) && (sx < srcW))
+                                            {
+                                                *buf++ = src_biased[sx];
+                                            }
+                                            else
+                                            {
+                                                *buf++ = 0;
+                                            }
                                         }
                                     }
                                 }
-                            }
-                            var dst_biased = dst + dx;
-                            for(int dc = 0; dc < dstC; ++dc)
-                            {
-                                float sum = 0;
-                                var w = pweight + (g * dstC + dc) * weight_base;
-                                #if simd
-                                    var buffer_vec = (Vector4*)buffer;
-                                    var w_vec = (Vector4*)w;
-                                    var result = new Vector4(0f);
-                                    int m = 0;
-                                    for(; m < weight_base / 4; ++m)
-                                    {
-                                        result += *buffer_vec++ * *w_vec++;
-                                    }
-                                    sum = result.X + result.Y + result.Z + result.W;
-                                    m *= 4;
-                                    for(; m < weight_base; ++m)
-                                    {
-                                        sum += buffer[m] * w[m];
-                                    }
-                                #else
-                                    for(int m = 0; m < weight_base; ++m)
-                                    {
-                                        sum += buffer[m] * w[m];
-                                    }
-                                #endif
-                                dst_biased[((dst_base1 + dc) * dstH + dy) * dstW] = sum + bias_biased[dc];
+                                var dst_biased = dst + dx;
+                                for(int dc = 0; dc < dstC; ++dc)
+                                {
+                                    float sum = 0;
+                                    var w = pweight + (g * dstC + dc) * weight_base;
+                                    #if simd
+                                        var buffer_vec = (Vector4*)buffer;
+                                        var w_vec = (Vector4*)w;
+                                        var result = new Vector4(0f);
+                                        int m = 0;
+                                        for(; m < weight_base / 4; ++m)
+                                        {
+                                            result += *buffer_vec++ * *w_vec++;
+                                        }
+                                        sum = result.X + result.Y + result.Z + result.W;
+                                        m *= 4;
+                                        for(; m < weight_base; ++m)
+                                        {
+                                            sum += buffer[m] * w[m];
+                                        }
+                                    #else
+                                        for(int m = 0; m < weight_base; ++m)
+                                        {
+                                            sum += buffer[m] * w[m];
+                                        }
+                                    #endif
+                                    dst_biased[((dst_base1 + dc) * dstH + dy) * dstW] = sum + bias_biased[dc];
+                                }
                             }
                         }
-                        Marshal.FreeHGlobal((IntPtr)buffer);
+                        finally
+                        {
+                            FreeAligned(rawBufPtr);
+                        }
                     });
                 }
             }
@@ -241,71 +277,79 @@ namespace ColorfulSoft.DeOldify
                     var dst_base1 = g * dstC;
                     Parallel.For(0, dstH, (int dy) =>
                     {
-                        var buffer = (float*)Marshal.AllocHGlobal(buf_size).ToPointer();
-                        var sy1 = dy * strideY - padY;
-                        for(int dx = 0; dx < dstW; ++dx)
+                        long rawBufPtr = 0;
+                        float* buffer = null;
+                        try
                         {
-                            var sx1 = dx * strideX - padX;
-                            var buf = buffer;
-                            for(int sc = 0; sc < srcC; ++sc)
+                            buffer = AllocAligned(buf_size, out rawBufPtr);
+                            var sy1 = dy * strideY - padY;
+                            for(int dx = 0; dx < dstW; ++dx)
                             {
-                                var src_base2 = (src_base1 + sc) * srcH;
-                                for(int ky = 0; ky < kernelY; ++ky)
+                                var sx1 = dx * strideX - padX;
+                                var buf = buffer;
+                                for(int sc = 0; sc < srcC; ++sc)
                                 {
-                                    int sy = sy1 + ky * dilationY;
-                                    if((sy < 0) || (sy >= srcH))
+                                    var src_base2 = (src_base1 + sc) * srcH;
+                                    for(int ky = 0; ky < kernelY; ++ky)
                                     {
+                                        int sy = sy1 + ky * dilationY;
+                                        if((sy < 0) || (sy >= srcH))
+                                        {
+                                            for(int kx = 0; kx < kernelX; ++kx)
+                                            {
+                                                *buf++ = 0;
+                                            }
+                                            continue;
+                                        }
+                                        var src_biased = src + (src_base2 + sy) * srcW;
                                         for(int kx = 0; kx < kernelX; ++kx)
                                         {
-                                            *buf++ = 0;
-                                        }
-                                        continue;
-                                    }
-                                    var src_biased = src + (src_base2 + sy) * srcW;
-                                    for(int kx = 0; kx < kernelX; ++kx)
-                                    {
-                                        int sx = sx1 + kx * dilationX;
-                                        if((sx >= 0) && (sx < srcW))
-                                        {
-                                            *buf++ = src_biased[sx];
-                                        }
-                                        else
-                                        {
-                                            *buf++ = 0;
+                                            int sx = sx1 + kx * dilationX;
+                                            if((sx >= 0) && (sx < srcW))
+                                            {
+                                                *buf++ = src_biased[sx];
+                                            }
+                                            else
+                                            {
+                                                *buf++ = 0;
+                                            }
                                         }
                                     }
                                 }
-                            }
-                            var dst_biased = dst + dx;
-                            for(int dc = 0; dc < dstC; ++dc)
-                            {
-                                float sum = 0;
-                                var w = pweight + (g * dstC + dc) * weight_base;
-                                #if simd
-                                    var buffer_vec = (Vector4*)buffer;
-                                    var w_vec = (Vector4*)w;
-                                    var result = new Vector4(0f);
-                                    int m = 0;
-                                    for(; m < weight_base / 4; ++m)
-                                    {
-                                        result += *buffer_vec++ * *w_vec++;
-                                    }
-                                    sum = result.X + result.Y + result.Z + result.W;
-                                    m *= 4;
-                                    for(; m < weight_base; ++m)
-                                    {
-                                        sum += buffer[m] * w[m];
-                                    }
-                                #else
-                                    for(int m = 0; m < weight_base; ++m)
-                                    {
-                                        sum += buffer[m] * w[m];
-                                    }
-                                #endif
-                                dst_biased[((dst_base1 + dc) * dstH + dy) * dstW] = sum;
+                                var dst_biased = dst + dx;
+                                for(int dc = 0; dc < dstC; ++dc)
+                                {
+                                    float sum = 0;
+                                    var w = pweight + (g * dstC + dc) * weight_base;
+                                    #if simd
+                                        var buffer_vec = (Vector4*)buffer;
+                                        var w_vec = (Vector4*)w;
+                                        var result = new Vector4(0f);
+                                        int m = 0;
+                                        for(; m < weight_base / 4; ++m)
+                                        {
+                                            result += *buffer_vec++ * *w_vec++;
+                                        }
+                                        sum = result.X + result.Y + result.Z + result.W;
+                                        m *= 4;
+                                        for(; m < weight_base; ++m)
+                                        {
+                                            sum += buffer[m] * w[m];
+                                        }
+                                    #else
+                                        for(int m = 0; m < weight_base; ++m)
+                                        {
+                                            sum += buffer[m] * w[m];
+                                        }
+                                    #endif
+                                    dst_biased[((dst_base1 + dc) * dstH + dy) * dstW] = sum;
+                                }
                             }
                         }
-                        Marshal.FreeHGlobal((IntPtr)buffer);
+                        finally
+                        {
+                            FreeAligned(rawBufPtr);
+                        }
                     });
                 }
             }

@@ -32,6 +32,9 @@ class DeOldifyService {
   /// 最大并发处理数
   static const int _maxConcurrentTasks = 2;
 
+  /// 处理失败时的最大重试次数
+  static const int _maxRetries = 1;
+
   /// 当前正在运行的任务数
   int _runningTasks = 0;
 
@@ -141,7 +144,20 @@ class DeOldifyService {
               : Directory.systemTemp.path,
         );
 
-        final result = await DeOldifyProcessor.processInIsolate(params);
+        Uint8List? result;
+        for (int attempt = 0; attempt <= _maxRetries; attempt++) {
+          result = await DeOldifyProcessor.processInIsolate(params);
+
+          // If we got a result or this is the last attempt, stop retrying
+          if (result != null || attempt == _maxRetries) {
+            break;
+          }
+
+          // Only retry on process failure (not on "exe not found" etc.)
+          // Wait a bit before retrying to let any transient memory issues clear
+          log.debug('DeOldify: retrying (attempt ${attempt + 1}/$_maxRetries) for $cacheKey');
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
 
         if (result != null) {
           // 保存到缓存

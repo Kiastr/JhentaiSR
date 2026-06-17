@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -5,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:jhentai/src/service/log.dart';
 import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 
 /// DeOldify 处理参数（用于 Isolate 传递）
 class DeOldifyParams {
@@ -158,16 +158,18 @@ class DeOldifyProcessor {
       );
 
       if (result.exitCode != 0) {
-        final stderr = result.stderr != null ? String.fromCharCodes(result.stderr as List<int>) : '';
-        final stdout = result.stdout != null ? String.fromCharCodes(result.stdout as List<int>) : '';
+        // Decode stderr/stdout bytes, handling potential GBK encoding on Chinese Windows
+        final stderr = _decodeBytes(result.stderr as List<int>?);
+        final stdout = _decodeBytes(result.stdout as List<int>?);
+        final exitCodeDesc = _describeExitCode(result.exitCode);
         return DeOldifyResult.failure(
-          'process failed (exit code ${result.exitCode}). exe: $exePath, stderr: $stderr, stdout: $stdout'
+          'process failed ($exitCodeDesc). exe: $exePath, stderr: $stderr, stdout: $stdout'
         );
       }
 
       if (!outputFile.existsSync()) {
-        final stdout = result.stdout != null ? String.fromCharCodes(result.stdout as List<int>) : '';
-        final stderr = result.stderr != null ? String.fromCharCodes(result.stderr as List<int>) : '';
+        final stdout = _decodeBytes(result.stdout as List<int>?);
+        final stderr = _decodeBytes(result.stderr as List<int>?);
         return DeOldifyResult.failure(
           'output file not found after processing. '
           'exit code: ${result.exitCode}, stdout: $stdout, stderr: $stderr'
@@ -188,6 +190,43 @@ class DeOldifyProcessor {
           outputFile.deleteSync();
         }
       } catch (_) {}
+    }
+  }
+
+  /// Decode bytes from process output, trying UTF-8 first then falling back to Latin-1.
+  /// On Chinese Windows, stderr may be GBK-encoded which appears as garbled text in UTF-8.
+  static String _decodeBytes(List<int>? bytes) {
+    if (bytes == null || bytes.isEmpty) return '';
+    try {
+      return utf8.decode(bytes, allowMalformed: true);
+    } catch (_) {
+      return String.fromCharCodes(bytes);
+    }
+  }
+
+  /// Convert Windows process exit code to a human-readable description.
+  /// Common crash codes:
+  /// - 0xC0000005 (-1073741819): STATUS_ACCESS_VIOLATION (memory access violation)
+  /// - 0xC000001D (-1073741795): STATUS_ILLEGAL_INSTRUCTION
+  /// - 0xC00000FD (-1073741571): STATUS_STACK_OVERFLOW
+  /// - 0xC0000142 (-1073741502): STATUS_DLL_INIT_FAILED
+  static String _describeExitCode(int exitCode) {
+    if (exitCode == 0) return 'exit code 0 (success)';
+    // Convert negative to unsigned 32-bit
+    int unsigned = exitCode < 0 ? (0x100000000 + exitCode) : exitCode;
+    switch (unsigned) {
+      case 0xC0000005:
+        return 'exit code $exitCode (STATUS_ACCESS_VIOLATION: memory access violation. '
+            'This is a known issue with DeOldify.NET SIMD operations on unaligned memory. '
+            'Please recompile deoldify exe from the fixed source code.)';
+      case 0xC000001D:
+        return 'exit code $exitCode (STATUS_ILLEGAL_INSTRUCTION)';
+      case 0xC00000FD:
+        return 'exit code $exitCode (STATUS_STACK_OVERFLOW)';
+      case 0xC0000142:
+        return 'exit code $exitCode (STATUS_DLL_INIT_FAILED: a DLL initialization routine failed)';
+      default:
+        return 'exit code $exitCode (0x${unsigned.toRadixString(16).toUpperCase()})';
     }
   }
 }

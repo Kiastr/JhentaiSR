@@ -15,6 +15,53 @@ namespace ColorfulSoft.DeOldify
     {
 
         /// <summary>
+        /// Alignment boundary in bytes (16 for Vector4 SIMD compatibility).
+        /// </summary>
+        private const int Alignment = 16;
+
+        /// <summary>
+        /// Original unaligned pointer for freeing. Stored as long for x64 compatibility.
+        /// </summary>
+        private long _RawDataPtr;
+
+        private long _RawShapePtr;
+
+        /// <summary>
+        /// Allocates aligned memory and stores the original pointer for freeing.
+        /// </summary>
+        private static float* AllocAlignedFloat(int count)
+        {
+            int size = count * sizeof(float);
+            int total = size + Alignment + sizeof(long);
+            IntPtr raw = Marshal.AllocHGlobal(total);
+            long rawAddr = raw.ToInt64();
+            // Reserve space before the aligned pointer to store the original pointer
+            long alignedAddr = (rawAddr + sizeof(long) + Alignment - 1) & ~(long)(Alignment - 1);
+            // Store original pointer just before the aligned block
+            Marshal.WriteInt64(new IntPtr(alignedAddr - sizeof(long)), rawAddr);
+            return (float*)alignedAddr;
+        }
+
+        private static int* AllocAlignedInt(int count)
+        {
+            int size = count * sizeof(int);
+            int total = size + Alignment + sizeof(long);
+            IntPtr raw = Marshal.AllocHGlobal(total);
+            long rawAddr = raw.ToInt64();
+            long alignedAddr = (rawAddr + sizeof(long) + Alignment - 1) & ~(long)(Alignment - 1);
+            Marshal.WriteInt64(new IntPtr(alignedAddr - sizeof(long)), rawAddr);
+            return (int*)alignedAddr;
+        }
+
+        private static void FreeAligned(long storedRawAddr)
+        {
+            if(storedRawAddr != 0)
+            {
+                Marshal.FreeHGlobal(new IntPtr(storedRawAddr));
+            }
+        }
+
+        /// <summary>
         /// Data.
         /// </summary>
         public float* Data;
@@ -54,14 +101,16 @@ namespace ColorfulSoft.DeOldify
         {
             this.Ndim = shape.Length;
             this.Numel = 1;
-            this.Shape = (int*)Marshal.AllocCoTaskMem(sizeof(int) * this.Ndim).ToPointer();
+            this.Shape = AllocAlignedInt(this.Ndim);
+            this._RawShapePtr = Marshal.ReadInt64(new IntPtr((long)Shape - sizeof(long)));
             var Pshape = this.Shape;
             foreach(var Dim in shape)
             {
                 this.Numel *= Dim;
                 *Pshape++ = Dim;
             }
-            this.Data = (float*)Marshal.AllocCoTaskMem(sizeof(float) * this.Numel).ToPointer();
+            this.Data = AllocAlignedFloat(this.Numel);
+            this._RawDataPtr = Marshal.ReadInt64(new IntPtr((long)Data - sizeof(long)));
         }
 
         /// <summary>
@@ -71,12 +120,12 @@ namespace ColorfulSoft.DeOldify
         {
             if((this.Data != null) && this.__DisposeData)
             {
-                Marshal.FreeCoTaskMem((IntPtr)this.Data);
+                FreeAligned(this._RawDataPtr);
                 this.Data = null;
             }
             if(this.Shape != null)
             {
-                Marshal.FreeCoTaskMem((IntPtr)this.Shape);
+                FreeAligned(this._RawShapePtr);
                 this.Shape = null;
             }
         }
@@ -88,12 +137,12 @@ namespace ColorfulSoft.DeOldify
         {
             if((this.Data != null) && this.__DisposeData)
             {
-                Marshal.FreeCoTaskMem((IntPtr)this.Data);
+                FreeAligned(this._RawDataPtr);
                 this.Data = null;
             }
             if(this.Shape != null)
             {
-                Marshal.FreeCoTaskMem((IntPtr)this.Shape);
+                FreeAligned(this._RawShapePtr);
                 this.Shape = null;
             }
         }
@@ -106,9 +155,11 @@ namespace ColorfulSoft.DeOldify
         {
             var t = new Tensor();
             t.Data = this.Data;
+            t._RawDataPtr = this._RawDataPtr;
             t.Ndim = 2;
             t.Numel = this.Numel;
-            t.Shape = (int*)Marshal.AllocCoTaskMem(sizeof(int) * 2).ToPointer();
+            t.Shape = AllocAlignedInt(2);
+            t._RawShapePtr = Marshal.ReadInt64(new IntPtr((long)t.Shape - sizeof(long)));
             t.Shape[0] = this.Shape[0];
             t.Shape[1] = this.Shape[1] * this.Shape[2];
             this.__DisposeData = false;
@@ -125,9 +176,11 @@ namespace ColorfulSoft.DeOldify
         {
             var t = new Tensor();
             t.Data = this.Data;
+            t._RawDataPtr = this._RawDataPtr;
             t.Ndim = 3;
             t.Numel = this.Numel;
-            t.Shape = (int*)Marshal.AllocCoTaskMem(sizeof(int) * 3).ToPointer();
+            t.Shape = AllocAlignedInt(3);
+            t._RawShapePtr = Marshal.ReadInt64(new IntPtr((long)t.Shape - sizeof(long)));
             t.Shape[0] = this.Shape[0];
             t.Shape[1] = h;
             t.Shape[2] = w;
