@@ -35,6 +35,34 @@ class DeOldifyProcessor {
     }
   }
 
+  /// 查找 deoldify exe 的路径
+  /// 根据模型类型选择 deoldify_stable.exe 或 deoldify_artistic.exe
+  /// 按优先级检查：应用目录/deoldify/、模型目录/、应用目录/
+  static String? _findExePath(String modelDirectoryPath, String modelType) {
+    final exeName = modelType == 'artistic' ? 'deoldify_artistic.exe' : 'deoldify_stable.exe';
+
+    final candidates = <String>[
+      // 1. 应用运行目录下的 deoldify 子目录
+      path.join(Directory.current.path, 'deoldify', exeName),
+      // 2. 模型目录中
+      path.join(modelDirectoryPath, exeName),
+      // 3. 模型目录的上级目录
+      path.join(path.dirname(modelDirectoryPath), exeName),
+      // 4. 应用运行目录
+      path.join(Directory.current.path, exeName),
+      // 5. 通用名称 deoldify.exe（兼容旧版）
+      path.join(Directory.current.path, 'deoldify', 'deoldify.exe'),
+      path.join(modelDirectoryPath, 'deoldify.exe'),
+    ];
+
+    for (final candidate in candidates) {
+      if (File(candidate).existsSync()) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
   /// 在 Isolate 中执行的静态方法
   static Future<Uint8List?> _processImage(DeOldifyParams params) async {
     File? inputFile;
@@ -49,14 +77,24 @@ class DeOldifyProcessor {
 
       await inputFile.writeAsBytes(params.imageBytes);
 
-      final exePath = path.join(Directory.current.path, 'deoldify', 'deoldify.exe');
+      // 查找 deoldify exe
+      final exePath = _findExePath(params.modelDirectoryPath, params.modelType);
+      if (exePath == null) {
+        debugPrint('DeOldify: deoldify exe not found for model type "${params.modelType}". '
+            'Please ensure deoldify_${params.modelType}.exe is placed in the deoldify directory.');
+        return null;
+      }
+
       final result = await Process.run(
         exePath,
         [inputFile.path, outputFile.path, params.modelType, params.modelDirectoryPath],
+        stdoutEncoding: null,
+        stderrEncoding: null,
       );
 
       if (result.exitCode != 0) {
-        debugPrint('DeOldify process failed with exit code ${result.exitCode}: ${result.stderr}');
+        final stderr = result.stderr != null ? String.fromCharCodes(result.stderr as List<int>) : '';
+        debugPrint('DeOldify process failed with exit code ${result.exitCode}: $stderr');
         return null;
       }
 

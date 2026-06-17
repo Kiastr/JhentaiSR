@@ -142,6 +142,8 @@ class DeOldifyService {
           // 保存到缓存
           await _saveToCache(fullKey, result);
           log.debug('DeOldify: processing complete for $cacheKey');
+        } else {
+          log.error('DeOldify: processing returned null for $cacheKey (exe not found or processing failed)');
         }
 
         return result;

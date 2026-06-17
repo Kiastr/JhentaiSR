@@ -12,6 +12,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Compile DeOldify.exe (stable)
+        shell: cmd
+        run: |
+          cd DeOldify.NET\Implementation
+          if not exist Release mkdir Release
+          C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /define:stable /unsafe /optimize /platform:x64 /target:winexe /out:"Release\deoldify_stable.exe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /resource:"src\Resources\Preview.jpg" /resource:"src\Resources\Input.jpg" /resource:"src\Resources\Output.jpg" /resource:"src\Resources\Info.png" /resource:"src\Resources\Icon.png" /resource:"src\Resources\ColorfulSoft.png" "src\Functional.cs" "src\HalfHelper.cs" "src\Program.cs" "src\Tensor.cs" "src\UI.cs" "src\DeOldify.cs" "src\AssemblyInfo.cs"
+
+      - name: Compile DeOldify.exe (artistic)
+        shell: cmd
+        run: |
+          cd DeOldify.NET\Implementation
+          C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /unsafe /optimize /platform:x64 /target:winexe /out:"Release\deoldify_artistic.exe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /resource:"src\Resources\Preview.jpg" /resource:"src\Resources\Input.jpg" /resource:"src\Resources\Output.jpg" /resource:"src\Resources\Info.png" /resource:"src\Resources\Icon.png" /resource:"src\Resources\ColorfulSoft.png" "src\Functional.cs" "src\HalfHelper.cs" "src\Program.cs" "src\Tensor.cs" "src\UI.cs" "src\DeOldify.cs" "src\AssemblyInfo.cs"
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -61,6 +74,16 @@ jobs:
 
       - name: Build Windows
         run: flutter build windows --release -t lib/src/main.dart
+
+      - name: Copy DeOldify executables to build output
+        shell: pwsh
+        run: |
+          $buildDir = "build\windows\x64\runner\Release\deoldify"
+          New-Item -ItemType Directory -Force -Path $buildDir
+          Copy-Item "DeOldify.NET\Implementation\Release\deoldify_stable.exe" $buildDir -Force
+          Copy-Item "DeOldify.NET\Implementation\Release\deoldify_artistic.exe" $buildDir -Force
+          Copy-Item "windows\deoldify\README.txt" $buildDir -Force
+          Write-Host "DeOldify executables copied to build output"
 
       - name: Create ZIP archive
         run: |
