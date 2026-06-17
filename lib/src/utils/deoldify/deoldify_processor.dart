@@ -166,7 +166,12 @@ class DeOldifyProcessor {
       }
 
       if (!outputFile.existsSync()) {
-        return DeOldifyResult.failure('output file not found after processing');
+        final stdout = result.stdout != null ? String.fromCharCodes(result.stdout as List<int>) : '';
+        final stderr = result.stderr != null ? String.fromCharCodes(result.stderr as List<int>) : '';
+        return DeOldifyResult.failure(
+          'output file not found after processing. '
+          'exit code: ${result.exitCode}, stdout: $stdout, stderr: $stderr'
+        );
       }
 
       return DeOldifyResult.success(outputFile.readAsBytesSync());

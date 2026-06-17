@@ -76,7 +76,7 @@ namespace ColorfulSoft.DeOldify
                 {
                     Console.Error.WriteLine("DeOldify CLI error: " + ex.Message);
                     Console.Error.WriteLine(ex.StackTrace);
-                    return;
+                    Environment.Exit(1);
                 }
             }
 
