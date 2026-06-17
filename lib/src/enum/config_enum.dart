@@ -19,6 +19,7 @@ enum ConfigEnum {
   siteSetting('siteSetting'),
   styleSetting('styleSetting'),
   superResolutionSetting('SuperResolutionSetting'),
+  deOldifySetting('DeOldifySetting'),
   userSetting('userSetting'),
   archiveBotSetting('archiveBotSetting'),
   downloadSearchPageType('downloadSearchPageType'),

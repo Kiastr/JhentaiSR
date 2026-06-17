@@ -49,6 +49,7 @@ import '../pages/search/desktop/desktop_search_page.dart';
 import '../pages/setting/account/setting_account_page.dart';
 import '../pages/setting/advanced/loglist/log/log_page.dart';
 import '../pages/setting/advanced/loglist/log_list_page.dart';
+import '../pages/setting/advanced/deoldify/setting_deoldify_page.dart';
 import '../pages/setting/advanced/super_resolution/setting_super_resolution_page.dart';
 import '../pages/setting/download/archive_bot/archive_bot_settings_page.dart';
 import '../pages/setting/preference/block_rule/add_block_rule/configure_blocking_rule_page.dart';
@@ -123,6 +124,7 @@ class Routes {
   static const String archiveBotSettings = '/setting/download/archive_bot';
 
   static const String superResolution = "/setting_advanced/superResolution";
+  static const String deoldify = "/setting_advanced/deoldify";
   static const String logList = "/setting_advanced/logList";
   static const String log = "/setting_advanced/logList/log";
 
@@ -407,6 +409,12 @@ class Routes {
     EHPage(
       name: superResolution,
       page: () => const SettingSuperResolutionPage().withEscOrFifthButton2BackRightRoute(),
+      transition: defaultTransition,
+      offAllBefore: false,
+    ),
+    EHPage(
+      name: deoldify,
+      page: () => const SettingDeOldifyPage().withEscOrFifthButton2BackRightRoute(),
       transition: defaultTransition,
       offAllBefore: false,
     ),

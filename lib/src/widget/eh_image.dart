@@ -10,6 +10,8 @@ import 'package:jhentai/src/setting/advanced_setting.dart';
 import 'package:jhentai/src/setting/style_setting.dart';
 import 'package:jhentai/src/setting/read_setting.dart';
 import 'package:jhentai/src/utils/anime4k/anime4k_service.dart';
+import 'package:jhentai/src/utils/deoldify/deoldify_service.dart';
+import 'package:jhentai/src/setting/deoldify_setting.dart';
 import 'dart:io' as io;
 
 import '../service/gallery_download_service.dart';
@@ -94,8 +96,8 @@ class EHImage extends StatefulWidget {
 }
 
 class _EHImageState extends State<EHImage> {
-  Uint8List? _upscaledBytes;
-  bool _isUpscaling = false;
+  Uint8List? _processedBytes;
+  bool _isProcessing = false;
 
   @override
   Widget build(BuildContext context) {
@@ -103,7 +105,7 @@ class _EHImageState extends State<EHImage> {
 
     if (advancedSetting.inNoImageMode.isTrue) {
       child = const SizedBox();
-    } else if (_upscaledBytes != null) {
+    } else if (_processedBytes != null) {
       child = _buildMemoryImage(context);
     } else if (widget.galleryImage.path == null) {
       child = buildNetworkImage(context);
@@ -136,7 +138,7 @@ class _EHImageState extends State<EHImage> {
 
   Widget _buildMemoryImage(BuildContext context) {
     return ExtendedImage.memory(
-      _upscaledBytes!,
+      _processedBytes!,
       fit: widget.fit,
       height: widget.containerHeight,
       width: widget.containerWidth,
@@ -186,8 +188,9 @@ class _EHImageState extends State<EHImage> {
                   child: GestureDetector(child: const Icon(Icons.sentiment_very_dissatisfied), onTap: state.reLoadImage),
                 );
           case LoadState.completed:
-            if (readSetting.enableAnime4K.isTrue && readSetting.enableAnime4KForNetwork.isTrue) {
-              _triggerNetworkImageUpscale(state);
+            if ((readSetting.enableAnime4K.isTrue && readSetting.enableAnime4KForNetwork.isTrue) ||
+                (io.Platform.isWindows && deOldifySetting.enableDeOldify.isTrue)) {
+              _triggerNetworkImageProcessing(state);
             }
 
             state.returnLoadStateChangedWidget = true;
@@ -216,29 +219,48 @@ class _EHImageState extends State<EHImage> {
     );
   }
 
-  Future<void> _triggerNetworkImageUpscale(ExtendedImageState state) async {
-    if (_upscaledBytes != null || _isUpscaling) return;
+  Future<void> _triggerNetworkImageProcessing(ExtendedImageState state) async {
+    if (_processedBytes != null || _isProcessing) return;
 
     final io.File? file = await getCachedImageFile(widget.galleryImage.url);
     if (file == null) return;
 
-    _isUpscaling = true;
-    final bytes = await file.readAsBytes();
-    final result = await Anime4KService.instance.processImage(
-      imageBytes: bytes,
-      cacheKey: widget.galleryImage.url,
-      scaleFactor: readSetting.anime4KScaleFactor.value,
-      pushStrength: readSetting.anime4KPushStrength.value,
-      pushGradStrength: readSetting.anime4KPushGradStrength.value,
-    );
+    _isProcessing = true;
+    Uint8List? bytes = await file.readAsBytes();
 
-    if (result != null && mounted) {
+    // 先执行 Anime4K 超分辨率处理
+    if (readSetting.enableAnime4K.isTrue && readSetting.enableAnime4KForNetwork.isTrue) {
+      final upscaleResult = await Anime4KService.instance.processImage(
+        imageBytes: bytes,
+        cacheKey: widget.galleryImage.url,
+        scaleFactor: readSetting.anime4KScaleFactor.value,
+        pushStrength: readSetting.anime4KPushStrength.value,
+        pushGradStrength: readSetting.anime4KPushGradStrength.value,
+      );
+      if (upscaleResult != null) {
+        bytes = upscaleResult;
+      }
+    }
+
+    // 再执行 DeOldify 上色处理
+    if (io.Platform.isWindows && deOldifySetting.enableDeOldify.isTrue) {
+      final colorizeResult = await DeOldifyService.instance.processImage(
+        imageBytes: bytes,
+        cacheKey: widget.galleryImage.url,
+        modelType: deOldifySetting.modelType.value,
+      );
+      if (colorizeResult != null) {
+        bytes = colorizeResult;
+      }
+    }
+
+    if (bytes != null && mounted) {
       setState(() {
-        _upscaledBytes = result;
-        _isUpscaling = false;
+        _processedBytes = bytes;
+        _isProcessing = false;
       });
     } else {
-      _isUpscaling = false;
+      _isProcessing = false;
     }
   }
 
@@ -277,8 +299,8 @@ class _EHImageState extends State<EHImage> {
                   child: GestureDetector(child: const Icon(Icons.sentiment_very_dissatisfied), onTap: state.reLoadImage),
                 );
           case LoadState.completed:
-            if (readSetting.enableAnime4K.isTrue) {
-              _triggerFileImageUpscale(filePath);
+            if (readSetting.enableAnime4K.isTrue || (io.Platform.isWindows && deOldifySetting.enableDeOldify.isTrue)) {
+              _triggerFileImageProcessing(filePath);
             }
 
             state.returnLoadStateChangedWidget = true;
@@ -308,24 +330,47 @@ class _EHImageState extends State<EHImage> {
     );
   }
 
-  Future<void> _triggerFileImageUpscale(String filePath) async {
-    if (_upscaledBytes != null || _isUpscaling) return;
+  Future<void> _triggerFileImageProcessing(String filePath) async {
+    if (_processedBytes != null || _isProcessing) return;
 
-    _isUpscaling = true;
-    final result = await Anime4KService.instance.processFile(
-      filePath: filePath,
-      scaleFactor: readSetting.anime4KScaleFactor.value,
-      pushStrength: readSetting.anime4KPushStrength.value,
-      pushGradStrength: readSetting.anime4KPushGradStrength.value,
-    );
+    _isProcessing = true;
+    Uint8List? bytes;
 
-    if (result != null && mounted) {
+    // 先执行 Anime4K 超分辨率处理
+    if (readSetting.enableAnime4K.isTrue) {
+      final upscaleResult = await Anime4KService.instance.processFile(
+        filePath: filePath,
+        scaleFactor: readSetting.anime4KScaleFactor.value,
+        pushStrength: readSetting.anime4KPushStrength.value,
+        pushGradStrength: readSetting.anime4KPushGradStrength.value,
+      );
+      if (upscaleResult != null) {
+        bytes = upscaleResult;
+      }
+    }
+
+    // 再执行 DeOldify 上色处理
+    if (io.Platform.isWindows && deOldifySetting.enableDeOldify.isTrue) {
+      if (bytes == null) {
+        bytes = await io.File(filePath).readAsBytes();
+      }
+      final colorizeResult = await DeOldifyService.instance.processImage(
+        imageBytes: bytes,
+        cacheKey: filePath,
+        modelType: deOldifySetting.modelType.value,
+      );
+      if (colorizeResult != null) {
+        bytes = colorizeResult;
+      }
+    }
+
+    if (bytes != null && mounted) {
       setState(() {
-        _upscaledBytes = result;
-        _isUpscaling = false;
+        _processedBytes = bytes;
+        _isProcessing = false;
       });
     } else {
-      _isUpscaling = false;
+      _isProcessing = false;
     }
   }
 
