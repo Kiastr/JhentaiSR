@@ -15,7 +15,16 @@ namespace ColorfulSoft.DeOldify
     {
 
         ///<summary>
+        /// Whether to use half-precision (float16) model loading.
+        /// Detected at runtime from the model file extension:
+        /// .hmodel = true (half-precision), .model = false (float32).
+        /// This overrides the compile-time #if half flag.
+        ///</summary>
+        private static bool UseHalfPrecision = false;
+
+        ///<summary>
         /// Loads data from the stream using BinaryReader.
+        /// Uses the runtime-detected format (UseHalfPrecision) instead of compile-time flag.
         ///</summary>
         ///<param name="reader">Source.</param>
         ///<param name="shape">Shape of the tensor.</param>
@@ -25,13 +34,19 @@ namespace ColorfulSoft.DeOldify
             var t = new Tensor(shape);
             var n = t.Numel;
             var container = t.Data;
-            for(int i = 0; i < n; ++i)
+            if(UseHalfPrecision)
             {
-                #if half
+                for(int i = 0; i < n; ++i)
+                {
                     container[i] = HalfHelper.HalfToSingle(reader.ReadUInt16());
-                #else
+                }
+            }
+            else
+            {
+                for(int i = 0; i < n; ++i)
+                {
                     container[i] = reader.ReadSingle();
-                #endif
+                }
             }
             return t;
         }
@@ -442,10 +457,24 @@ namespace ColorfulSoft.DeOldify
             BinaryReader br;
             if(modelPath != null && File.Exists(modelPath))
             {
+                // Detect model format from file extension:
+                // .hmodel = half-precision (float16, 2 bytes per element)
+                // .model = single-precision (float32, 4 bytes per element)
+                // This overrides the compile-time #if half flag, allowing the same exe
+                // to load both .model and .hmodel files.
+                string ext = Path.GetExtension(modelPath).ToLowerInvariant();
+                UseHalfPrecision = (ext == ".hmodel");
+                Console.Out.WriteLine("DeOldify: model format detected: " + (UseHalfPrecision ? "half-precision (float16)" : "single-precision (float32)") + " from " + ext);
                 br = new BinaryReader(File.OpenRead(modelPath));
             }
             else
             {
+                // Use compile-time flag for embedded resources
+                #if half
+                    UseHalfPrecision = true;
+                #else
+                    UseHalfPrecision = false;
+                #endif
                 // Try embedded resources (may be null if not compiled with model)
                 Stream stream = null;
             #if half
@@ -1357,6 +1386,31 @@ namespace ColorfulSoft.DeOldify
                 Parameters.Add("layers.11.0.bias", LoadTensor(br, 3));
                 Parameters.Add("layers.11.0.weight", LoadTensor(br, 3, 303, 1, 1));
             #endif
+            // Validate model file: check if we've consumed all bytes
+            // If there are significantly more bytes remaining, the format might be wrong
+            if(modelPath != null)
+            {
+                try
+                {
+                    var stream = br.BaseStream;
+                    var remaining = stream.Length - stream.Position;
+                    if(remaining > 100)
+                    {
+                        Console.Out.WriteLine("DeOldify WARNING: " + remaining + " bytes remaining in model file after loading all parameters. "
+                            + "This may indicate a model format mismatch (float32 vs float16). "
+                            + "Detected format: " + (UseHalfPrecision ? "half-precision (float16)" : "single-precision (float32)"));
+                    }
+                    else
+                    {
+                        Console.Out.WriteLine("DeOldify: model file loaded successfully, " + stream.Position + " bytes read.");
+                    }
+                }
+                catch
+                {
+                    // Ignore validation errors
+                }
+            }
+            br.Close();
         }
 
     }

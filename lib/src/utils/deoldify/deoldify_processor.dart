@@ -162,8 +162,24 @@ class DeOldifyProcessor {
         final stderr = _decodeBytes(result.stderr as List<int>?);
         final stdout = _decodeBytes(result.stdout as List<int>?);
         final exitCodeDesc = _describeExitCode(result.exitCode);
+        // Check if the stdout contains format detection info
+        final formatInfo = _extractFormatInfo(stdout);
+        String hint = '';
+        if (result.exitCode == -1073741819) {
+          // STATUS_ACCESS_VIOLATION
+          if (formatInfo != null && formatInfo.contains('single-precision')) {
+            hint = '\n\nHint: The model file is float32 (.model) format. '
+                'The crash may be caused by the exe being compiled with /define:half '
+                'but loading a .model file. Please recompile the exe from the fixed '
+                'source code which auto-detects the model format.';
+          } else if (formatInfo == null) {
+            hint = '\n\nHint: This is a memory access violation. The exe may be '
+                'outdated. Please recompile deoldify_artistic.exe from the fixed '
+                'source code in DeOldify.NET/Implementation/src/.';
+          }
+        }
         return DeOldifyResult.failure(
-          'process failed ($exitCodeDesc). exe: $exePath, stderr: $stderr, stdout: $stdout'
+          'process failed ($exitCodeDesc). exe: $exePath$hint, stderr: $stderr, stdout: $stdout'
         );
       }
 
@@ -216,9 +232,7 @@ class DeOldifyProcessor {
     int unsigned = exitCode < 0 ? (0x100000000 + exitCode) : exitCode;
     switch (unsigned) {
       case 0xC0000005:
-        return 'exit code $exitCode (STATUS_ACCESS_VIOLATION: memory access violation. '
-            'This is a known issue with DeOldify.NET SIMD operations on unaligned memory. '
-            'Please recompile deoldify exe from the fixed source code.)';
+        return 'exit code $exitCode (STATUS_ACCESS_VIOLATION: memory access violation)';
       case 0xC000001D:
         return 'exit code $exitCode (STATUS_ILLEGAL_INSTRUCTION)';
       case 0xC00000FD:
@@ -228,5 +242,16 @@ class DeOldifyProcessor {
       default:
         return 'exit code $exitCode (0x${unsigned.toRadixString(16).toUpperCase()})';
     }
+  }
+
+  /// Extract model format info from the exe's stdout output.
+  /// The fixed exe prints: "DeOldify: model format detected: ..."
+  /// Returns null if the format info is not found (old exe without format detection).
+  static String? _extractFormatInfo(String stdout) {
+    final marker = 'DeOldify: model format detected:';
+    final idx = stdout.indexOf(marker);
+    if (idx == -1) return null;
+    final end = stdout.indexOf('\n', idx);
+    return stdout.substring(idx, end == -1 ? stdout.length : end).trim();
   }
 }

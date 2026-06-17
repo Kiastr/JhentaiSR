@@ -6,6 +6,7 @@ using System;
 using System.IO;
 using System.Drawing;
 using System.Windows.Forms;
+using System.Runtime.ExceptionServices;
 
 namespace ColorfulSoft.DeOldify
 {
@@ -20,6 +21,7 @@ namespace ColorfulSoft.DeOldify
         /// Entry point.
         /// </summary>
         [STAThread]
+        [HandleProcessCorruptedStateExceptions]
         public static void Main(string[] args)
         {
             // Command line mode: deoldify.exe <input> <output> <modelType> [modelDirectory]
@@ -40,10 +42,14 @@ namespace ColorfulSoft.DeOldify
                         string[] searchPaths = new string[] { modelDirectory, Path.Combine(modelDirectory, "models") };
 
                         // Possible model file names (case-insensitive search)
+                        // Both .model (float32) and .hmodel (float16) are supported.
+                        // The format is auto-detected by the Initialize method from the file extension.
                         string[] modelFilePatterns = new string[]
                         {
                             "Colorize" + char.ToUpper(modelType[0]) + modelType.Substring(1) + "_gen.model",
                             "Colorize" + char.ToUpper(modelType[0]) + modelType.Substring(1) + "_gen.hmodel",
+                            "Colorize" + char.ToUpper(modelType[0]) + modelType.Substring(1) + ".model",
+                            "Colorize" + char.ToUpper(modelType[0]) + modelType.Substring(1) + ".hmodel",
                             "*" + modelType + "*.model",
                             "*" + modelType + "*.hmodel",
                             "*.model",
@@ -99,6 +105,20 @@ namespace ColorfulSoft.DeOldify
                     result.Save(args[1], System.Drawing.Imaging.ImageFormat.Png);
                     Console.Out.WriteLine("DeOldify: colorization complete");
                     return;
+                }
+                catch(AccessViolationException ex)
+                {
+                    Console.Error.WriteLine("DeOldify FATAL: AccessViolationException (memory access violation)");
+                    Console.Error.WriteLine("This is likely caused by:");
+                    Console.Error.WriteLine("  1. Model format mismatch (float32 .model vs float16 .hmodel)");
+                    Console.Error.WriteLine("  2. Unaligned SIMD memory access (old exe without alignment fix)");
+                    Console.Error.WriteLine("  3. Corrupted model file");
+                    Console.Error.WriteLine("");
+                    Console.Error.WriteLine("Solution: Recompile deoldify_artistic.exe from the fixed source code.");
+                    Console.Error.WriteLine("");
+                    Console.Error.WriteLine(ex.Message);
+                    Console.Error.WriteLine(ex.StackTrace);
+                    Environment.Exit(-1073741819); // 0xC0000005
                 }
                 catch(Exception ex)
                 {
