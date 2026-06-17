@@ -12,14 +12,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Ninja
-        run: choco install ninja -y
-
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.27.4'
           cache: true
+
+      - name: Patch Flutter SDK - use VS 2022 instead of VS 2019
+        shell: pwsh
+        run: |
+          $flutterToolsRoot = "$env:FLUTTER_ROOT\packages\flutter_tools"
+          $patchedFiles = @()
+
+          if (Test-Path $flutterToolsRoot) {
+            Get-ChildItem $flutterToolsRoot -Recurse -Filter "*.dart" -ErrorAction SilentlyContinue | ForEach-Object {
+              $file = $_.FullName
+              $content = Get-Content $file -Raw -Encoding UTF8
+              if ($content -match "Visual Studio 16 2019") {
+                $content = $content -replace "Visual Studio 16 2019", "Visual Studio 17 2022"
+                Set-Content -NoNewline -Path $file -Value $content -Encoding UTF8
+                $patchedFiles += $_.FullName.Replace($flutterToolsRoot, '...')
+              }
+            }
+          }
+
+          if ($patchedFiles.Count -gt 0) {
+            Write-Host "Patched $($patchedFiles.Count) file(s):"
+            $patchedFiles | ForEach-Object { Write-Host "  $_" }
+            $toolCacheDir = "$env:FLUTTER_ROOT\bin\cache"
+            Remove-Item "$toolCacheDir\flutter_tools.snapshot" -Force -ErrorAction SilentlyContinue
+            Remove-Item "$toolCacheDir\flutter_tools.stamp" -Force -ErrorAction SilentlyContinue
+            Write-Host "Cleared Flutter tool snapshot cache"
+          } else {
+            Write-Host "No Visual Studio 16 2019 references found in Flutter SDK"
+          }
 
       - name: Clean and Get dependencies
         run: |
@@ -35,8 +61,6 @@ jobs:
 
       - name: Build Windows
         run: flutter build windows --release -t lib/src/main.dart
-        env:
-          CMAKE_GENERATOR: Ninja
 
       - name: Create ZIP archive
         run: |
