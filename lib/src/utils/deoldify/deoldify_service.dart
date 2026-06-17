@@ -30,7 +30,8 @@ class DeOldifyService {
   final Set<String> _processingKeys = {};
 
   /// 最大并发处理数
-  static const int _maxConcurrentTasks = 2;
+  /// 设为1，因为 DeOldify.NET 的 Parallel.For 已经使用了多个CPU核心
+  static const int _maxConcurrentTasks = 1;
 
   /// 处理失败时的最大重试次数
   static const int _maxRetries = 1;

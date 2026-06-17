@@ -3,7 +3,6 @@
 //*************************************************************************************************
 
 using System;
-using System.Numerics;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 
@@ -20,6 +19,13 @@ namespace ColorfulSoft.DeOldify
         /// Alignment boundary in bytes (16 for Vector4 SIMD compatibility).
         /// </summary>
         private const int Alignment = 16;
+
+        /// <summary>
+        /// Maximum degree of parallelism for Parallel.For.
+        /// Limits CPU usage to prevent system freezing.
+        /// Uses at most 4 cores or half of available cores, whichever is smaller.
+        /// </summary>
+        private static readonly int MaxParallelism = Math.Max(1, Math.Min(4, Environment.ProcessorCount / 2));
 
         /// <summary>
         /// Allocates aligned memory for SIMD operations. Returns the aligned pointer
@@ -77,7 +83,8 @@ namespace ColorfulSoft.DeOldify
             var px = x.Data;
             var py = y.Data;
             var winsize = (float)(kernelW * kernelH);
-            Parallel.For(0, x_channel, (int c) =>
+            var po = new ParallelOptions { MaxDegreeOfParallelism = MaxParallelism };
+            Parallel.For(0, x_channel, po, (int c) =>
             {
                 for(int ox = 0; ox < y_width; ++ox)
                 {
@@ -191,7 +198,8 @@ namespace ColorfulSoft.DeOldify
                     var src_base1 = g * srcC;
                     var dst_base1 = g * dstC;
                     var bias_biased = bias.Data + g * dstC;
-                    Parallel.For(0, dstH, (int dy) =>
+                    var po = new ParallelOptions { MaxDegreeOfParallelism = MaxParallelism };
+                    Parallel.For(0, dstH, po, (int dy) =>
                     {
                         long rawBufPtr = 0;
                         float* buffer = null;
@@ -237,27 +245,13 @@ namespace ColorfulSoft.DeOldify
                                 {
                                     float sum = 0;
                                     var w = pweight + (g * dstC + dc) * weight_base;
-                                    #if simd
-                                        var buffer_vec = (Vector4*)buffer;
-                                        var w_vec = (Vector4*)w;
-                                        var result = new Vector4(0f);
-                                        int m = 0;
-                                        for(; m < weight_base / 4; ++m)
-                                        {
-                                            result += *buffer_vec++ * *w_vec++;
-                                        }
-                                        sum = result.X + result.Y + result.Z + result.W;
-                                        m *= 4;
-                                        for(; m < weight_base; ++m)
-                                        {
-                                            sum += buffer[m] * w[m];
-                                        }
-                                    #else
-                                        for(int m = 0; m < weight_base; ++m)
-                                        {
-                                            sum += buffer[m] * w[m];
-                                        }
-                                    #endif
+                                    // Scalar path only - SIMD removed because weight_base
+                                    // is often not a multiple of 4, causing misaligned
+                                    // Vector4 access and AccessViolationException.
+                                    for(int m = 0; m < weight_base; ++m)
+                                    {
+                                        sum += buffer[m] * w[m];
+                                    }
                                     dst_biased[((dst_base1 + dc) * dstH + dy) * dstW] = sum + bias_biased[dc];
                                 }
                             }
@@ -275,7 +269,8 @@ namespace ColorfulSoft.DeOldify
                 {
                     var src_base1 = g * srcC;
                     var dst_base1 = g * dstC;
-                    Parallel.For(0, dstH, (int dy) =>
+                    var po = new ParallelOptions { MaxDegreeOfParallelism = MaxParallelism };
+                    Parallel.For(0, dstH, po, (int dy) =>
                     {
                         long rawBufPtr = 0;
                         float* buffer = null;
@@ -321,27 +316,13 @@ namespace ColorfulSoft.DeOldify
                                 {
                                     float sum = 0;
                                     var w = pweight + (g * dstC + dc) * weight_base;
-                                    #if simd
-                                        var buffer_vec = (Vector4*)buffer;
-                                        var w_vec = (Vector4*)w;
-                                        var result = new Vector4(0f);
-                                        int m = 0;
-                                        for(; m < weight_base / 4; ++m)
-                                        {
-                                            result += *buffer_vec++ * *w_vec++;
-                                        }
-                                        sum = result.X + result.Y + result.Z + result.W;
-                                        m *= 4;
-                                        for(; m < weight_base; ++m)
-                                        {
-                                            sum += buffer[m] * w[m];
-                                        }
-                                    #else
-                                        for(int m = 0; m < weight_base; ++m)
-                                        {
-                                            sum += buffer[m] * w[m];
-                                        }
-                                    #endif
+                                    // Scalar path only - SIMD removed because weight_base
+                                    // is often not a multiple of 4, causing misaligned
+                                    // Vector4 access and AccessViolationException.
+                                    for(int m = 0; m < weight_base; ++m)
+                                    {
+                                        sum += buffer[m] * w[m];
+                                    }
                                     dst_biased[((dst_base1 + dc) * dstH + dy) * dstW] = sum;
                                 }
                             }
@@ -389,7 +370,8 @@ namespace ColorfulSoft.DeOldify
             var pa = a.Data;
             var pb = b.Data;
             var pc = c.Data;
-            Parallel.For(0, ah, (int i) =>
+            var po = new ParallelOptions { MaxDegreeOfParallelism = MaxParallelism };
+            Parallel.For(0, ah, po, (int i) =>
             {
                 var pa_ = pa + aw * i;
                 var pc_ = pc + i * bw;
@@ -439,7 +421,8 @@ namespace ColorfulSoft.DeOldify
             var y = new Tensor(y_channel, y_height, y_width);
             var px = x.Data;
             var py = y.Data;
-            Parallel.For(0, x_channel, (int c) =>
+            var po = new ParallelOptions { MaxDegreeOfParallelism = MaxParallelism };
+            Parallel.For(0, x_channel, po, (int c) =>
             {
                 for(int ox = 0; ox < y_width; ++ox)
                 {
