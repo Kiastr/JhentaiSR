@@ -6,7 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-android:
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
@@ -46,3 +47,37 @@ jobs:
         with:
           name: jhentai-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.4'
+          channel: 'stable'
+          cache: true
+
+      - name: Clean and Get dependencies
+        run: |
+          flutter clean
+          flutter pub get
+
+      - name: Build Runner
+        run: |
+          if (Select-String -Path pubspec.yaml -Pattern "build_runner" -Quiet) {
+            dart run build_runner build --delete-conflicting-outputs
+          }
+
+      - name: Build Windows
+        run: flutter build windows --release -t lib/src/main.dart
+
+      - name: Upload Windows Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: jhentai-release-windows
+          path: build/windows/x64/runner/Release
