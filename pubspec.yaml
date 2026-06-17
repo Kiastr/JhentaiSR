@@ -72,7 +72,7 @@ dependencies:
   flutter_windowmanager_plus: 1.0.1
   animate_do: 3.3.4
   share_plus: 10.1.1
-  syncfusion_flutter_charts: 27.1.48
+  syncfusion_flutter_charts: 30.1.37
   archive: 3.6.1
   # https://github.com/ponnamkarthik/FlutterToast/pull/542
   fluttertoast: 
