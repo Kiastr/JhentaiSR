@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
+import 'package:jhentai/src/service/log.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
@@ -11,12 +12,23 @@ class DeOldifyParams {
   final Uint8List imageBytes;
   final String modelType;
   final String modelDirectoryPath;
+  final String tempDirPath;
 
   const DeOldifyParams({
     required this.imageBytes,
     this.modelType = 'stable',
     required this.modelDirectoryPath,
+    required this.tempDirPath,
   });
+}
+
+/// DeOldify 处理结果
+class DeOldifyResult {
+  final Uint8List? imageBytes;
+  final String? error;
+
+  const DeOldifyResult.success(this.imageBytes) : error = null;
+  const DeOldifyResult.failure(this.error) : imageBytes = null;
 }
 
 /// DeOldify 图像上色处理器
@@ -29,9 +41,13 @@ class DeOldifyProcessor {
   /// 返回处理后的图像字节数据 (PNG 格式)
   static Future<Uint8List?> processInIsolate(DeOldifyParams params) async {
     try {
-      return await compute(_processImage, params);
+      final result = await compute(_processImage, params);
+      if (result.error != null) {
+        log.error('DeOldify: ${result.error}');
+      }
+      return result.imageBytes;
     } catch (e) {
-      debugPrint('DeOldify processing error: $e');
+      log.error('DeOldify processing error: $e');
       return null;
     }
   }
@@ -77,14 +93,6 @@ class DeOldifyProcessor {
         return imageBytes;
       }
 
-      // 检查是否是 JPEG（magic bytes: FF D8 FF）
-      if (imageBytes.length >= 3 &&
-          imageBytes[0] == 0xFF &&
-          imageBytes[1] == 0xD8 &&
-          imageBytes[2] == 0xFF) {
-        // JPEG 也被 System.Drawing.Bitmap 支持，但为统一处理也转换
-      }
-
       // 检查是否是 BMP（magic bytes: 42 4D）
       if (imageBytes.length >= 2 &&
           imageBytes[0] == 0x42 &&
@@ -101,7 +109,7 @@ class DeOldifyProcessor {
         return imageBytes;
       }
 
-      // WebP 或其他格式：用 image 包解码并重新编码为 PNG
+      // WebP、JPEG 或其他格式：用 image 包解码并重新编码为 PNG
       final decoded = img.decodeImage(imageBytes);
       if (decoded != null) {
         return Uint8List.fromList(img.encodePng(decoded));
@@ -115,13 +123,13 @@ class DeOldifyProcessor {
     }
   }
 
-  /// 在 Isolate 中执行的静态方法
-  static Future<Uint8List?> _processImage(DeOldifyParams params) async {
+  /// 在 Isolate 中执行的静态方法（同步，因为 compute 需要）
+  static DeOldifyResult _processImage(DeOldifyParams params) {
     File? inputFile;
     File? outputFile;
 
     try {
-      final tempDir = await getTemporaryDirectory();
+      final tempDir = Directory(params.tempDirPath);
       final timestamp = DateTime.now().millisecondsSinceEpoch;
 
       inputFile = File(path.join(tempDir.path, 'deoldify_in_$timestamp.png'));
@@ -129,17 +137,20 @@ class DeOldifyProcessor {
 
       // 将图片转换为 PNG 格式（deoldify.exe 不支持 WebP）
       final pngBytes = _convertToPng(params.imageBytes);
-      await inputFile.writeAsBytes(pngBytes);
+      inputFile.writeAsBytesSync(pngBytes);
 
       // 查找 deoldify exe
       final exePath = _findExePath(params.modelDirectoryPath, params.modelType);
       if (exePath == null) {
-        debugPrint('DeOldify: deoldify exe not found for model type "${params.modelType}". '
-            'Please ensure deoldify_${params.modelType}.exe is placed in the deoldify directory.');
-        return null;
+        final exeName = params.modelType == 'artistic' ? 'deoldify_artistic.exe' : 'deoldify_stable.exe';
+        return DeOldifyResult.failure(
+          'deoldify exe not found. Please ensure $exeName is placed in the deoldify directory. '
+          'Searched: ${path.join(Directory.current.path, 'deoldify', exeName)}, '
+          '${path.join(params.modelDirectoryPath, exeName)}, etc.'
+        );
       }
 
-      final result = await Process.run(
+      final result = Process.runSync(
         exePath,
         [inputFile.path, outputFile.path, params.modelType, params.modelDirectoryPath],
         stdoutEncoding: null,
@@ -148,28 +159,28 @@ class DeOldifyProcessor {
 
       if (result.exitCode != 0) {
         final stderr = result.stderr != null ? String.fromCharCodes(result.stderr as List<int>) : '';
-        debugPrint('DeOldify process failed with exit code ${result.exitCode}: $stderr');
-        return null;
+        final stdout = result.stdout != null ? String.fromCharCodes(result.stdout as List<int>) : '';
+        return DeOldifyResult.failure(
+          'process failed (exit code ${result.exitCode}). exe: $exePath, stderr: $stderr, stdout: $stdout'
+        );
       }
 
-      if (!await outputFile.exists()) {
-        debugPrint('DeOldify output file not found');
-        return null;
+      if (!outputFile.existsSync()) {
+        return DeOldifyResult.failure('output file not found after processing');
       }
 
-      return await outputFile.readAsBytes();
+      return DeOldifyResult.success(outputFile.readAsBytesSync());
     } catch (e) {
-      debugPrint('DeOldify _processImage error: $e');
-      return null;
+      return DeOldifyResult.failure('_processImage error: $e');
     } finally {
       try {
-        if (inputFile != null && await inputFile.exists()) {
-          await inputFile.delete();
+        if (inputFile != null && inputFile.existsSync()) {
+          inputFile.deleteSync();
         }
       } catch (_) {}
       try {
-        if (outputFile != null && await outputFile.exists()) {
-          await outputFile.delete();
+        if (outputFile != null && outputFile.existsSync()) {
+          outputFile.deleteSync();
         }
       } catch (_) {}
     }

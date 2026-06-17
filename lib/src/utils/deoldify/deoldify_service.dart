@@ -134,6 +134,9 @@ class DeOldifyService {
           imageBytes: imageBytes,
           modelType: modelType,
           modelDirectoryPath: modelDirPath,
+          tempDirPath: _cacheDir != null
+              ? path.dirname(_cacheDir!)
+              : Directory.systemTemp.path,
         );
 
         final result = await DeOldifyProcessor.processInIsolate(params);
@@ -142,8 +145,6 @@ class DeOldifyService {
           // 保存到缓存
           await _saveToCache(fullKey, result);
           log.debug('DeOldify: processing complete for $cacheKey');
-        } else {
-          log.error('DeOldify: processing returned null for $cacheKey (exe not found or processing failed)');
         }
 
         return result;
