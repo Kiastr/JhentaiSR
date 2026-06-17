@@ -97,6 +97,37 @@ namespace ColorfulSoft.DeOldify
                             "in the model directory.");
                     }
 
+                    // Check architecture mismatch: exe compiled as stable/artistic vs model type
+                    #if stable
+                        if(modelType.ToLowerInvariant() != "stable")
+                        {
+                            Console.Error.WriteLine("DeOldify FATAL: Architecture mismatch!");
+                            Console.Error.WriteLine("  This exe was compiled with /define:stable (stable architecture).");
+                            Console.Error.WriteLine("  But the model type requested is: " + modelType);
+                            Console.Error.WriteLine("  The model file is: " + modelPath);
+                            Console.Error.WriteLine("");
+                            Console.Error.WriteLine("  Solution: Either:");
+                            Console.Error.WriteLine("    1. Use deoldify_stable.exe with a stable model (ColorizeStable_gen.model)");
+                            Console.Error.WriteLine("    2. Recompile without /define:stable for artistic model support");
+                            Console.Error.WriteLine("       Use: Compile.artistic.unified.bat");
+                            Environment.Exit(2);
+                        }
+                    #else
+                        if(modelType.ToLowerInvariant() == "stable")
+                        {
+                            Console.Error.WriteLine("DeOldify FATAL: Architecture mismatch!");
+                            Console.Error.WriteLine("  This exe was compiled for artistic model (no /define:stable).");
+                            Console.Error.WriteLine("  But the model type requested is: stable");
+                            Console.Error.WriteLine("  The model file is: " + modelPath);
+                            Console.Error.WriteLine("");
+                            Console.Error.WriteLine("  Solution: Either:");
+                            Console.Error.WriteLine("    1. Use deoldify_artistic.exe with an artistic model (ColorizeArtistic_gen.model)");
+                            Console.Error.WriteLine("    2. Recompile with /define:stable for stable model support");
+                            Console.Error.WriteLine("       Use: Compile.stable.unified.bat");
+                            Environment.Exit(2);
+                        }
+                    #endif
+
                     // Initialize with external model file
                     DeOldify.Initialize(modelPath);
 
@@ -110,11 +141,13 @@ namespace ColorfulSoft.DeOldify
                 {
                     Console.Error.WriteLine("DeOldify FATAL: AccessViolationException (memory access violation)");
                     Console.Error.WriteLine("This is likely caused by:");
-                    Console.Error.WriteLine("  1. Model format mismatch (float32 .model vs float16 .hmodel)");
-                    Console.Error.WriteLine("  2. Unaligned SIMD memory access (old exe without alignment fix)");
+                    Console.Error.WriteLine("  1. Architecture mismatch (exe compiled as stable but using artistic model, or vice versa)");
+                    Console.Error.WriteLine("  2. Model format mismatch (float32 .model vs float16 .hmodel)");
                     Console.Error.WriteLine("  3. Corrupted model file");
                     Console.Error.WriteLine("");
-                    Console.Error.WriteLine("Solution: Recompile deoldify_artistic.exe from the fixed source code.");
+                    Console.Error.WriteLine("Solution: Ensure the exe architecture matches the model type:");
+                    Console.Error.WriteLine("  - For artistic models (ColorizeArtistic_gen.model): use Compile.artistic.unified.bat");
+                    Console.Error.WriteLine("  - For stable models (ColorizeStable_gen.model): use Compile.stable.unified.bat");
                     Console.Error.WriteLine("");
                     Console.Error.WriteLine(ex.Message);
                     Console.Error.WriteLine(ex.StackTrace);

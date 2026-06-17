@@ -500,6 +500,7 @@ namespace ColorfulSoft.DeOldify
             }
             Parameters = new Dictionary<string, Tensor>();
             #if stable
+                Console.Out.WriteLine("DeOldify: loading STABLE model architecture parameters...");
                 Parameters.Add("layers.0.0.weight", LoadTensor(br, 64, 3, 7, 7));
                 Parameters.Add("layers.0.1.weight", LoadTensor(br, 64));
                 Parameters.Add("layers.0.1.bias", LoadTensor(br, 64));
@@ -1103,6 +1104,7 @@ namespace ColorfulSoft.DeOldify
                 Parameters.Add("layers.11.0.bias", LoadTensor(br, 3));
                 Parameters.Add("layers.11.0.weight", LoadTensor(br, 3, 259, 1, 1));
             #else
+                Console.Out.WriteLine("DeOldify: loading ARTISTIC model architecture parameters...");
                 Parameters.Add("layers.0.0.weight", LoadTensor(br, 64, 3, 7, 7));
                 Parameters.Add("layers.0.1.weight", LoadTensor(br, 64));
                 Parameters.Add("layers.0.1.bias", LoadTensor(br, 64));

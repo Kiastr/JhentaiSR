@@ -167,16 +167,24 @@ class DeOldifyProcessor {
         String hint = '';
         if (result.exitCode == -1073741819) {
           // STATUS_ACCESS_VIOLATION
-          if (formatInfo != null && formatInfo.contains('single-precision')) {
-            hint = '\n\nHint: The model file is float32 (.model) format. '
-                'The crash may be caused by the exe being compiled with /define:half '
-                'but loading a .model file. Please recompile the exe from the fixed '
-                'source code which auto-detects the model format.';
+          if (stdout.contains('Architecture mismatch')) {
+            hint = '\n\nHint: Architecture mismatch! The exe was compiled for a different '
+                'model type (stable vs artistic). Please use the correct exe: '
+                'deoldify_artistic.exe for artistic models, deoldify_stable.exe for stable models.';
+          } else if (stdout.contains('model file loaded successfully')) {
+            // Model loaded fine but crashed during inference - likely architecture mismatch
+            hint = '\n\nHint: Model loaded successfully but crashed during processing. '
+                'This is likely an architecture mismatch: the exe was compiled with '
+                '/define:stable but is being used with an artistic model (or vice versa). '
+                'Please recompile using Compile.artistic.unified.bat for artistic models.';
           } else if (formatInfo == null) {
             hint = '\n\nHint: This is a memory access violation. The exe may be '
                 'outdated. Please recompile deoldify_artistic.exe from the fixed '
                 'source code in DeOldify.NET/Implementation/src/.';
           }
+        } else if (result.exitCode == 2) {
+          // Architecture mismatch detected by Program.cs
+          hint = '\n\nHint: Architecture mismatch detected. See stderr for details.';
         }
         return DeOldifyResult.failure(
           'process failed ($exitCodeDesc). exe: $exePath$hint, stderr: $stderr, stdout: $stdout'

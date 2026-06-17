@@ -549,6 +549,18 @@ namespace ColorfulSoft.DeOldify
             var pa = a.Data;
             var pb = b.Data;
             var pc = c.Data;
+            // Bounds check: verify tensor sizes match their shapes
+            int aExpected = adepth * aheight * awidth;
+            int bExpected = bdepth * bheight * bwidth;
+            int cExpected = depth * height * width;
+            if(a.Numel < aExpected || b.Numel < bExpected || c.Numel < cExpected)
+            {
+                throw new InvalidOperationException(
+                    "RestrictedCat2d: tensor size mismatch. " +
+                    "a: shape=[" + adepth + "," + aheight + "," + awidth + "] numel=" + a.Numel + " expected=" + aExpected + ", " +
+                    "b: shape=[" + bdepth + "," + bheight + "," + bwidth + "] numel=" + b.Numel + " expected=" + bExpected + ". " +
+                    "This usually means the exe architecture (stable/artistic) does not match the model file.");
+            }
             for(int y = 0; y < height; ++y)
             {
                 for(int x = 0; x < width; ++x)
