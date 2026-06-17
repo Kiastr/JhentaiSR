@@ -79,6 +79,9 @@ jobs:
           }
 
       - name: Build Windows
+        env:
+          CMAKE_GENERATOR: "Visual Studio 17 2022"
+          CMAKE_GENERATOR_PLATFORM: x64
         run: flutter build windows --release -t lib/src/main.dart
 
       - name: Upload Windows Build
