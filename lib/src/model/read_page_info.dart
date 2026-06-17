@@ -32,6 +32,9 @@ class ReadPageInfo {
   /// used for initialize
   bool useSuperResolution;
 
+  /// used for initialize (DeOldify colorization)
+  bool useColorization;
+
   ReadPageInfo({
     required this.mode,
     this.gid,
@@ -44,5 +47,6 @@ class ReadPageInfo {
     required this.readProgressRecordStorageKey,
     this.images,
     required this.useSuperResolution,
+    this.useColorization = false,
   }) : currentImageIndex = initialIndex;
 }

@@ -33,6 +33,9 @@ class DownloadSetting with JHLifeCircleBeanWithConfigStorage implements JHLifeCi
   RxBool deleteArchiveFileAfterDownload = true.obs;
   RxBool restoreTasksAutomatically = false.obs;
 
+  /// 下载完成后自动调用 DeOldify 上色（仅桌面端有效，需先在高级设置中配置模型）
+  RxBool autoColorize = false.obs;
+
   @override
   ConfigEnum get configEnum => ConfigEnum.downloadSetting;
 
@@ -63,6 +66,7 @@ class DownloadSetting with JHLifeCircleBeanWithConfigStorage implements JHLifeCi
     manageArchiveDownloadConcurrency.value = map['manageArchiveDownloadConcurrency'] ?? manageArchiveDownloadConcurrency.value;
     deleteArchiveFileAfterDownload.value = map['deleteArchiveFileAfterDownload'] ?? deleteArchiveFileAfterDownload.value;
     restoreTasksAutomatically.value = map['restoreTasksAutomatically'] ?? restoreTasksAutomatically.value;
+    autoColorize.value = map['autoColorize'] ?? autoColorize.value;
   }
 
   @override
@@ -83,6 +87,7 @@ class DownloadSetting with JHLifeCircleBeanWithConfigStorage implements JHLifeCi
       'manageArchiveDownloadConcurrency': manageArchiveDownloadConcurrency.value,
       'deleteArchiveFileAfterDownload': deleteArchiveFileAfterDownload.value,
       'restoreTasksAutomatically': restoreTasksAutomatically.value,
+      'autoColorize': autoColorize.value,
     });
   }
 
@@ -195,6 +200,12 @@ class DownloadSetting with JHLifeCircleBeanWithConfigStorage implements JHLifeCi
   Future<void> saveRestoreTasksAutomatically(bool value) async {
     log.debug('saveRestoreTasksAutomatically:$value');
     restoreTasksAutomatically.value = value;
+    await saveBeanConfig();
+  }
+
+  Future<void> saveAutoColorize(bool value) async {
+    log.debug('saveAutoColorize:$value');
+    autoColorize.value = value;
     await saveBeanConfig();
   }
 

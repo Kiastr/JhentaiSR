@@ -20,6 +20,7 @@ import '../../model/read_page_info.dart';
 import '../../routes/routes.dart';
 import '../../service/archive_download_service.dart';
 import '../../service/gallery_download_service.dart';
+import '../../service/colorization_service.dart';
 import '../../service/super_resolution_service.dart';
 import '../../setting/preference_setting.dart';
 import '../../setting/read_setting.dart';
@@ -266,6 +267,7 @@ class DownloadSearchLogic extends GetxController with UpdateGlobalGalleryStatusL
           readProgressRecordStorageKey: gallery.gid.toString(),
           pageCount: gallery.pageCount,
           useSuperResolution: superResolutionService.get(gallery.gid, SuperResolutionType.gallery) != null,
+          useColorization: colorizationService.get(gallery.gid, SuperResolutionType.gallery) != null,
         ),
       );
     }
@@ -297,6 +299,7 @@ class DownloadSearchLogic extends GetxController with UpdateGlobalGalleryStatusL
           readProgressRecordStorageKey: archive.gid.toString(),
           images: images,
           useSuperResolution: superResolutionService.get(archive.gid, SuperResolutionType.archive) != null,
+          useColorization: colorizationService.get(archive.gid, SuperResolutionType.archive) != null,
         ),
       );
     }

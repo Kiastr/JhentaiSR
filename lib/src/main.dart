@@ -9,6 +9,7 @@ import 'package:jhentai/src/service/app_update_service.dart';
 import 'package:jhentai/src/service/archive_download_service.dart';
 import 'package:jhentai/src/service/built_in_blocked_user_service.dart';
 import 'package:jhentai/src/service/cloud_service.dart';
+import 'package:jhentai/src/service/colorization_service.dart';
 import 'package:jhentai/src/service/frame_rate_service.dart';
 import 'package:jhentai/src/service/gallery_download_service.dart';
 import 'package:jhentai/src/service/history_service.dart';
@@ -30,6 +31,7 @@ import 'package:jhentai/src/service/volume_service.dart';
 import 'package:jhentai/src/service/windows_service.dart';
 import 'package:jhentai/src/setting/advanced_setting.dart';
 import 'package:jhentai/src/setting/archive_bot_setting.dart';
+import 'package:jhentai/src/setting/colorization_setting.dart';
 import 'package:jhentai/src/setting/download_setting.dart';
 import 'package:jhentai/src/setting/eh_setting.dart';
 import 'package:jhentai/src/setting/favorite_setting.dart';
@@ -64,6 +66,7 @@ List<JHLifeCircleBean> lifeCircleBeans = [
   archiveDownloadService,
   localGalleryService,
   cloudConfigService,
+  colorizationService,
   frameRateService,
   historyService,
   isolateService,
@@ -84,6 +87,7 @@ List<JHLifeCircleBean> lifeCircleBeans = [
   advancedSetting,
   downloadSetting,
   archiveBotSetting,
+  colorizationSetting,
   ehSetting,
   favoriteSetting,
   mouseSetting,

@@ -13,7 +13,9 @@ import 'package:jhentai/src/widget/grouped_list.dart';
 import '../../../../model/gallery_image.dart';
 import '../../../../routes/routes.dart';
 import '../../../../service/archive_download_service.dart';
+import '../../../../service/colorization_service.dart' as cs;
 import '../../../../service/super_resolution_service.dart' as srs;
+import '../../../../service/colorization_service.dart';
 import '../../../../service/super_resolution_service.dart';
 import '../../../../setting/performance_setting.dart';
 import '../../../../setting/preference_setting.dart';
@@ -328,6 +330,7 @@ class ArchiveListDownloadPage extends StatelessWidget with Scroll2TopPageMixin, 
         _buildParseFromBot(context, archive),
         _buildIsOriginal(context, archive),
         _buildSuperResolutionLabel(context, archive),
+        _buildColorizationLabel(context, archive),
         _buildButton(context, archive),
       ],
     );
@@ -427,6 +430,41 @@ class ArchiveListDownloadPage extends StatelessWidget with Scroll2TopPageMixin, 
               fontSize: 9,
               color: UIConfig.resumePauseButtonColor(context),
               decoration: superResolutionInfo.status == srs.SuperResolutionStatus.paused ? TextDecoration.lineThrough : null,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildColorizationLabel(BuildContext context, ArchiveDownloadedData archive) {
+    return GetBuilder<cs.ColorizationService>(
+      id: '${cs.ColorizationService.colorizationId}::${archive.gid}',
+      builder: (_) {
+        cs.ColorizationInfo? colorizationInfo = colorizationService.get(archive.gid, srs.SuperResolutionType.archive);
+
+        if (colorizationInfo == null) {
+          return const SizedBox();
+        }
+
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            borderRadius: colorizationInfo.status == cs.ColorizationStatus.success ? null : BorderRadius.circular(4),
+            border: Border.all(color: UIConfig.resumePauseButtonColor(context)),
+            shape: colorizationInfo.status == cs.ColorizationStatus.success ? BoxShape.circle : BoxShape.rectangle,
+          ),
+          child: Text(
+            colorizationInfo.status == cs.ColorizationStatus.paused
+                ? 'Color'
+                : colorizationInfo.status == cs.ColorizationStatus.success
+                    ? 'Color'
+                    : 'Color(${colorizationInfo.imageStatuses.fold<int>(0, (previousValue, element) => previousValue + (element == cs.ColorizationStatus.success ? 1 : 0))}/${colorizationInfo.imageStatuses.length})',
+            style: TextStyle(
+              fontSize: 9,
+              color: UIConfig.resumePauseButtonColor(context),
+              decoration: colorizationInfo.status == cs.ColorizationStatus.paused ? TextDecoration.lineThrough : null,
             ),
           ),
         );

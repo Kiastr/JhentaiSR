@@ -8,6 +8,7 @@ import 'package:jhentai/src/model/gallery_image.dart';
 import 'package:jhentai/src/utils/route_util.dart';
 import 'package:jhentai/src/widget/eh_image.dart';
 import 'package:jhentai/src/widget/eh_wheel_speed_controller.dart';
+import 'package:jhentai/src/service/colorization_service.dart';
 import 'package:jhentai/src/service/super_resolution_service.dart';
 
 import '../../../../mixin/scroll_to_top_logic_mixin.dart';
@@ -323,6 +324,37 @@ class GridGallery extends StatelessWidget {
                             fontSize: 9,
                             color: UIConfig.onBackGroundColor(context),
                             decoration: superResolutionInfo.status == SuperResolutionStatus.paused ? TextDecoration.lineThrough : null,
+                          ),
+                        ),
+                      );
+              },
+            ),
+          if (gid != null && superResolutionType != null)
+            GetBuilder<ColorizationService>(
+              id: '${ColorizationService.colorizationId}::$gid',
+              builder: (_) {
+                ColorizationInfo? colorizationInfo = colorizationService.get(gid!, superResolutionType!);
+                return colorizationInfo == null
+                    ? const SizedBox()
+                    : Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        margin: const EdgeInsets.only(right: 4),
+                        decoration: BoxDecoration(
+                          color: UIConfig.backGroundColor(context),
+                          borderRadius: colorizationInfo.status == ColorizationStatus.success ? null : BorderRadius.circular(4),
+                          border: Border.all(color: UIConfig.onBackGroundColor(context)),
+                          shape: colorizationInfo.status == ColorizationStatus.success ? BoxShape.circle : BoxShape.rectangle,
+                        ),
+                        child: Text(
+                          colorizationInfo.status == ColorizationStatus.paused
+                              ? 'Color'
+                              : colorizationInfo.status == ColorizationStatus.success
+                                  ? 'Color'
+                                  : 'Color(${colorizationInfo.imageStatuses.fold<int>(0, (previousValue, element) => previousValue + (element == ColorizationStatus.success ? 1 : 0))}/${colorizationInfo.imageStatuses.length})',
+                          style: TextStyle(
+                            fontSize: 9,
+                            color: UIConfig.onBackGroundColor(context),
+                            decoration: colorizationInfo.status == ColorizationStatus.paused ? TextDecoration.lineThrough : null,
                           ),
                         ),
                       );

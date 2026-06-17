@@ -10,6 +10,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../../../config/ui_config.dart';
 import '../../../../service/gallery_download_service.dart';
+import '../../../../service/colorization_service.dart';
 import '../../../../service/super_resolution_service.dart';
 import '../../../../service/log.dart';
 import '../../../../widget/eh_image.dart';
@@ -241,6 +242,11 @@ abstract class BaseLayout extends StatelessWidget {
           return _buildLocalSuperResolutionImage(context, index);
         }
 
+        /// step 3.5: check if we are using colorization
+        if (logic.readPageState.useColorization) {
+          return _buildLocalColorizationImage(context, index);
+        }
+
         /// step 4: wait for downloading or display it
         return _buildLocalImage(context, index);
       },
@@ -263,6 +269,36 @@ abstract class BaseLayout extends StatelessWidget {
           child: EHImage(
             galleryImage: readPageState.images[index]!.copyWith(
               path: superResolutionService.computeImageOutputRelativePath(readPageState.images[index]!.path!),
+            ),
+            containerWidth: logic.readPageState.imageContainerSizes[index]?.width ?? logic.getPlaceHolderSize(index).width,
+            containerHeight: logic.readPageState.imageContainerSizes[index]?.height ?? logic.getPlaceHolderSize(index).height,
+            clearMemoryCacheWhenDispose: true,
+            loadingWidgetBuilder: () => _loadingWidgetBuilder(context, index),
+            failedWidgetBuilder: (state) => _failedWidgetBuilderForLocalMode(index, state),
+            completedWidgetBuilder: (state) => completedWidgetBuilderForLocalModeCallBack(index, state),
+            maxBytes: readSetting.enableMaxImageKilobyte.isTrue ? readSetting.maxImageKilobyte.toInt() * 1024 : null,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildLocalColorizationImage(BuildContext context, int index) {
+    return GetBuilder<ColorizationService>(
+      id: '${ColorizationService.colorizationImageId}::${readPageState.readPageInfo.gid!}::$index',
+      builder: (_) {
+        int gid = readPageState.readPageInfo.gid!;
+        SuperResolutionType type = readPageState.readPageInfo.mode == ReadMode.downloaded ? SuperResolutionType.gallery : SuperResolutionType.archive;
+        if (colorizationService.get(gid, type)?.imageStatuses[index] != ColorizationStatus.success) {
+          return _buildLocalImage(context, index);
+        }
+
+        return GestureDetector(
+          onLongPress: () => logic.showBottomMenuInLocalMode(index, context),
+          onSecondaryTap: () => logic.showBottomMenuInLocalMode(index, context),
+          child: EHImage(
+            galleryImage: readPageState.images[index]!.copyWith(
+              path: colorizationService.computeImageOutputRelativePath(readPageState.images[index]!.path!),
             ),
             containerWidth: logic.readPageState.imageContainerSizes[index]?.width ?? logic.getPlaceHolderSize(index).width,
             containerHeight: logic.readPageState.imageContainerSizes[index]?.height ?? logic.getPlaceHolderSize(index).height,

@@ -13,6 +13,7 @@ import 'package:jhentai/src/pages/read/layout/horizontal_list/horizontal_list_la
 import 'package:jhentai/src/pages/read/layout/horizontal_page/horizontal_page_layout.dart';
 import 'package:jhentai/src/pages/read/read_page_logic.dart';
 import 'package:jhentai/src/pages/read/read_page_state.dart';
+import 'package:jhentai/src/service/colorization_service.dart';
 import 'package:jhentai/src/service/super_resolution_service.dart';
 import 'package:jhentai/src/widget/eh_mouse_button_listener.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -310,6 +311,26 @@ class _ReadPageState extends State<ReadPage> with ScrollStatusListener, WindowLi
                   ),
                 ),
                 onPressed: logic.handleTapSuperResolutionButton,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(56, 56),
+                ),
+              ),
+            if (GetPlatform.isDesktop &&
+                state.readPageInfo.gid != null &&
+                (state.readPageInfo.mode == ReadMode.downloaded || state.readPageInfo.mode == ReadMode.archive) &&
+                state.readPageInfo.useColorization)
+              TextButton(
+                child: GetBuilder<ColorizationService>(
+                  id: '${ColorizationService.colorizationId}::${state.readPageInfo.gid}',
+                  builder: (_) => Text(
+                    'Color' + logic.getColorizationProgress(),
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: state.useColorization ? UIConfig.readPageActiveButtonColor(context) : UIConfig.readPageButtonColor,
+                    ),
+                  ),
+                ),
+                onPressed: logic.handleTapColorizationButton,
                 style: TextButton.styleFrom(
                   minimumSize: const Size(56, 56),
                 ),

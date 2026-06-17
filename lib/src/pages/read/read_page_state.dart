@@ -34,6 +34,7 @@ class ReadPageState with ScrollStatusListerState {
   Battery battery = Battery();
   int batteryLevel = 100;
   bool useSuperResolution = false;
+  bool useColorization = false;
   bool displayFirstPageAlone = readSetting.displayFirstPageAlone.value;
   FocusNode focusNode = FocusNode();
 
@@ -65,5 +66,6 @@ class ReadPageState with ScrollStatusListerState {
     parseImageUrlErrorMsg = List.generate(readPageInfo.pageCount, (_) => null);
 
     useSuperResolution = readPageInfo.useSuperResolution;
+    useColorization = readPageInfo.useColorization;
   }
 }

@@ -29,7 +29,9 @@ import 'package:jhentai/src/model/jh_response/fetch_image_hashes_vo.dart';
 import 'package:jhentai/src/model/jh_response/jh_response.dart';
 import 'package:jhentai/src/network/jh_request.dart';
 import 'package:jhentai/src/service/local_config_service.dart';
+import 'package:jhentai/src/service/colorization_service.dart';
 import 'package:jhentai/src/service/super_resolution_service.dart';
+import 'package:jhentai/src/setting/colorization_setting.dart';
 import 'package:jhentai/src/setting/download_setting.dart';
 import 'package:jhentai/src/setting/site_setting.dart';
 import 'package:jhentai/src/setting/user_setting.dart';
@@ -262,6 +264,7 @@ class GalleryDownloadService extends GetxController with GridBasePageServiceMixi
     log.info('Delete download gallery: ${gallery.title}, deleteImages:$deleteImages');
 
     await superResolutionService.deleteSuperResolve(gallery.gid, SuperResolutionType.gallery);
+    await colorizationService.deleteColorize(gallery.gid, SuperResolutionType.gallery);
 
     await _clearGalleryDownloadInfoInDatabase(gallery.gid);
     if (deleteImages) {
@@ -1419,6 +1422,13 @@ class GalleryDownloadService extends GetxController with GridBasePageServiceMixi
       await _updateGalleryDownloadStatus(gallery, DownloadStatus.downloaded);
       galleryDownloadInfos[gallery.gid]!.speedComputer.dispose();
       update(['$galleryDownloadSuccessId::${gallery.gid}']);
+
+      if (downloadSetting.autoColorize.isTrue &&
+          colorizationSetting.modelDirectoryPath.value != null &&
+          colorizationService.get(gallery.gid, SuperResolutionType.gallery) == null) {
+        log.info('Auto colorize gallery: ${gallery.gid}');
+        colorizationService.colorize(gallery.gid, SuperResolutionType.gallery);
+      }
     }
 
     update(['$galleryDownloadProgressId::${gallery.gid}']);

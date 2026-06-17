@@ -13,6 +13,7 @@ import '../../model/gallery_image.dart';
 import '../../model/gallery_url.dart';
 import '../../routes/routes.dart';
 import '../../service/gallery_download_service.dart';
+import '../../service/colorization_service.dart';
 import '../../service/super_resolution_service.dart';
 import '../../utils/byte_util.dart';
 import '../../utils/date_util.dart';
@@ -138,6 +139,8 @@ class DownloadSearchPage extends StatelessWidget {
                           _buildGalleryIsOriginal(context, gallery),
                           const SizedBox(width: 6),
                           _buildGallerySuperResolutionLabel(context, gallery),
+                          const SizedBox(width: 6),
+                          _buildGalleryColorizationLabel(context, gallery),
                           const SizedBox(width: 6),
                           _buildGalleryPublishTime(gallery, context),
                         ],
@@ -313,6 +316,40 @@ class DownloadSearchPage extends StatelessWidget {
     );
   }
 
+  Widget _buildGalleryColorizationLabel(BuildContext context, GallerySearchVO gallery) {
+    return GetBuilder<ColorizationService>(
+      id: '${ColorizationService.colorizationId}::${gallery.gid}',
+      builder: (_) {
+        ColorizationInfo? colorizationInfo = colorizationService.get(gallery.gid, SuperResolutionType.gallery);
+
+        if (colorizationInfo == null) {
+          return const SizedBox();
+        }
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            borderRadius: colorizationInfo.status == ColorizationStatus.success ? null : BorderRadius.circular(4),
+            border: Border.all(color: UIConfig.resumePauseButtonColor(context)),
+            shape: colorizationInfo.status == ColorizationStatus.success ? BoxShape.circle : BoxShape.rectangle,
+          ),
+          child: Text(
+            colorizationInfo.status == ColorizationStatus.paused
+                ? 'Color'
+                : colorizationInfo.status == ColorizationStatus.success
+                    ? 'Color'
+                    : 'Color(${colorizationInfo.imageStatuses.fold<int>(0, (previousValue, element) => previousValue + (element == ColorizationStatus.success ? 1 : 0))}/${colorizationInfo.imageStatuses.length})',
+            style: TextStyle(
+              fontSize: 9,
+              color: UIConfig.resumePauseButtonColor(context),
+              decoration: colorizationInfo.status == ColorizationStatus.paused ? TextDecoration.lineThrough : null,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildGalleryDownloadProgressText(GalleryDownloadProgress? downloadProgress, BuildContext context) {
     if (downloadProgress == null) {
       return const SizedBox();
@@ -378,6 +415,8 @@ class DownloadSearchPage extends StatelessWidget {
                           _buildArchiveIsOriginal(context, archive),
                           const SizedBox(width: 6),
                           _buildArchiveSuperResolutionLabel(context, archive),
+                          const SizedBox(width: 6),
+                          _buildArchiveColorizationLabel(context, archive),
                           const SizedBox(width: 6),
                           _buildArchivePublishTime(context, archive),
                         ],
@@ -489,6 +528,40 @@ class DownloadSearchPage extends StatelessWidget {
               fontSize: 9,
               color: UIConfig.resumePauseButtonColor(context),
               decoration: superResolutionInfo.status == SuperResolutionStatus.paused ? TextDecoration.lineThrough : null,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildArchiveColorizationLabel(BuildContext context, ArchiveSearchVO archive) {
+    return GetBuilder<ColorizationService>(
+      id: '${ColorizationService.colorizationId}::${archive.gid}',
+      builder: (_) {
+        ColorizationInfo? colorizationInfo = colorizationService.get(archive.gid, SuperResolutionType.archive);
+
+        if (colorizationInfo == null) {
+          return const SizedBox();
+        }
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            borderRadius: colorizationInfo.status == ColorizationStatus.success ? null : BorderRadius.circular(4),
+            border: Border.all(color: UIConfig.resumePauseButtonColor(context)),
+            shape: colorizationInfo.status == ColorizationStatus.success ? BoxShape.circle : BoxShape.rectangle,
+          ),
+          child: Text(
+            colorizationInfo.status == ColorizationStatus.paused
+                ? 'Color'
+                : colorizationInfo.status == ColorizationStatus.success
+                    ? 'Color'
+                    : 'Color(${colorizationInfo.imageStatuses.fold<int>(0, (previousValue, element) => previousValue + (element == ColorizationStatus.success ? 1 : 0))}/${colorizationInfo.imageStatuses.length})',
+            style: TextStyle(
+              fontSize: 9,
+              color: UIConfig.resumePauseButtonColor(context),
+              decoration: colorizationInfo.status == ColorizationStatus.paused ? TextDecoration.lineThrough : null,
             ),
           ),
         );

@@ -20,8 +20,10 @@ import 'package:jhentai/src/model/archive_bot_response/archive_resolve_vo.dart';
 import 'package:jhentai/src/model/archive_unlock_result.dart';
 import 'package:jhentai/src/network/archive_bot_request.dart';
 import 'package:jhentai/src/network/eh_request.dart';
+import 'package:jhentai/src/service/colorization_service.dart';
 import 'package:jhentai/src/service/super_resolution_service.dart';
 import 'package:jhentai/src/setting/archive_bot_setting.dart';
+import 'package:jhentai/src/setting/colorization_setting.dart';
 import 'package:jhentai/src/setting/download_setting.dart';
 import 'package:jhentai/src/setting/network_setting.dart';
 import 'package:jhentai/src/service/path_service.dart';
@@ -153,6 +155,7 @@ class ArchiveDownloadService extends GetxController with GridBasePageServiceMixi
       await pauseDownloadArchive(gid);
 
       await superResolutionService.deleteSuperResolve(gid, SuperResolutionType.archive);
+      await colorizationService.deleteColorize(gid, SuperResolutionType.archive);
 
       await _deleteArchiveInfoInDatabase(gid);
 
@@ -1073,6 +1076,13 @@ class ArchiveDownloadService extends GetxController with GridBasePageServiceMixi
     await _saveArchiveInfoInDisk(archive);
 
     await _updateArchiveStatus(archive.gid, ArchiveStatus.completed);
+
+    if (downloadSetting.autoColorize.isTrue &&
+        colorizationSetting.modelDirectoryPath.value != null &&
+        colorizationService.get(archive.gid, SuperResolutionType.archive) == null) {
+      log.info('Auto colorize archive: ${archive.gid}');
+      colorizationService.colorize(archive.gid, SuperResolutionType.archive);
+    }
 
     _tryWakeWaitingTasks();
   }
