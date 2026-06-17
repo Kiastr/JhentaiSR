@@ -2,7 +2,7 @@ name: JHenTai Build
 
 on:
   push:
-    branches: [ "master", "main" ]
+    branches: [ "master", "main", "trae/solo-agent-8mOOQg" ]
   workflow_dispatch:
 
 jobs:
