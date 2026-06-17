@@ -52,7 +52,7 @@ class SettingColorizationPage extends StatelessWidget {
       subtitle: Text(colorizationSetting.pythonPath.value ?? 'default'.tr),
       trailing: const Icon(Icons.keyboard_arrow_right),
       onTap: () async {
-        String? result;
+        FilePickerResult? result;
         try {
           result = await FilePicker.platform.pickFiles(
             type: FileType.custom,

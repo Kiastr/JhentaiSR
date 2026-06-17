@@ -7,6 +7,7 @@ import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/get_instance.dart';
 import 'package:get/get_state_manager/src/simple/get_controllers.dart';
 import 'package:get/get_utils/get_utils.dart';
+import 'package:jhentai/src/database/database.dart';
 import 'package:jhentai/src/enum/config_enum.dart';
 import 'package:jhentai/src/extension/dio_exception_extension.dart';
 import 'package:jhentai/src/extension/get_logic_extension.dart';
@@ -236,7 +237,7 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
     if (_infoTable[gid]?.isEmpty ?? false) {
       _infoTable.remove(gid);
     }
-    await localConfigService.delete(configKey: ConfigEnum.colorizationInfo, subConfigKey: '$gid_${type.index}');
+    await localConfigService.delete(configKey: ConfigEnum.colorizationInfo, subConfigKey: '${gid}_${type.index}');
 
     String dirPath;
     if (type == SuperResolutionType.gallery) {
@@ -438,7 +439,7 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
   // ============ LocalConfig 持久化 ============
 
   Future<void> _loadAllColorizationInfo() async {
-    List<LocalConfigData> configs = await _readAllColorizationConfigs();
+    List<LocalConfig> configs = await localConfigService.readWithAllSubKeys(configKey: ConfigEnum.colorizationInfo);
     for (var config in configs) {
       try {
         List parts = config.subConfigKey.split('_');
@@ -459,12 +460,6 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
     }
   }
 
-  Future<List<LocalConfigData>> _readAllColorizationConfigs() async {
-    return appDb.managers.localConfig
-        .filter((config) => config.configKey.equals(ConfigEnum.colorizationInfo.key))
-        .get();
-  }
-
   Future<void> _saveColorizationInfo(int gid, SuperResolutionType type, ColorizationInfo info) async {
     String json = jsonEncode({
       'status': info.status.index,
@@ -472,7 +467,7 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
     });
     await localConfigService.write(
       configKey: ConfigEnum.colorizationInfo,
-      subConfigKey: '$gid_${type.index}',
+      subConfigKey: '${gid}_${type.index}',
       value: json,
     );
   }
