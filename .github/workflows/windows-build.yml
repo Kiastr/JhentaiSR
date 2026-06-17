@@ -12,10 +12,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Ninja
+        run: choco install ninja -y
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          flutter-version: '3.27.4'
           cache: true
 
       - name: Clean and Get dependencies
@@ -32,6 +35,8 @@ jobs:
 
       - name: Build Windows
         run: flutter build windows --release -t lib/src/main.dart
+        env:
+          CMAKE_GENERATOR: Ninja
 
       - name: Create ZIP archive
         run: |
