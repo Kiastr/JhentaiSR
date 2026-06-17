@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
@@ -63,6 +64,57 @@ class DeOldifyProcessor {
     return null;
   }
 
+  /// 将图片字节数据转换为 PNG 格式
+  /// deoldify.exe 使用 System.Drawing.Bitmap，不支持 WebP，需要先转换
+  static Uint8List _convertToPng(Uint8List imageBytes) {
+    try {
+      // 检查是否已经是 PNG（magic bytes: 89 50 4E 47）
+      if (imageBytes.length >= 4 &&
+          imageBytes[0] == 0x89 &&
+          imageBytes[1] == 0x50 &&
+          imageBytes[2] == 0x4E &&
+          imageBytes[3] == 0x47) {
+        return imageBytes;
+      }
+
+      // 检查是否是 JPEG（magic bytes: FF D8 FF）
+      if (imageBytes.length >= 3 &&
+          imageBytes[0] == 0xFF &&
+          imageBytes[1] == 0xD8 &&
+          imageBytes[2] == 0xFF) {
+        // JPEG 也被 System.Drawing.Bitmap 支持，但为统一处理也转换
+      }
+
+      // 检查是否是 BMP（magic bytes: 42 4D）
+      if (imageBytes.length >= 2 &&
+          imageBytes[0] == 0x42 &&
+          imageBytes[1] == 0x4D) {
+        return imageBytes;
+      }
+
+      // 检查是否是 GIF（magic bytes: 47 49 46 38）
+      if (imageBytes.length >= 4 &&
+          imageBytes[0] == 0x47 &&
+          imageBytes[1] == 0x49 &&
+          imageBytes[2] == 0x46 &&
+          imageBytes[3] == 0x38) {
+        return imageBytes;
+      }
+
+      // WebP 或其他格式：用 image 包解码并重新编码为 PNG
+      final decoded = img.decodeImage(imageBytes);
+      if (decoded != null) {
+        return Uint8List.fromList(img.encodePng(decoded));
+      }
+
+      // 解码失败，返回原始数据让 exe 尝试
+      return imageBytes;
+    } catch (e) {
+      debugPrint('DeOldify: image format conversion error: $e');
+      return imageBytes;
+    }
+  }
+
   /// 在 Isolate 中执行的静态方法
   static Future<Uint8List?> _processImage(DeOldifyParams params) async {
     File? inputFile;
@@ -75,7 +127,9 @@ class DeOldifyProcessor {
       inputFile = File(path.join(tempDir.path, 'deoldify_in_$timestamp.png'));
       outputFile = File(path.join(tempDir.path, 'deoldify_out_$timestamp.png'));
 
-      await inputFile.writeAsBytes(params.imageBytes);
+      // 将图片转换为 PNG 格式（deoldify.exe 不支持 WebP）
+      final pngBytes = _convertToPng(params.imageBytes);
+      await inputFile.writeAsBytes(pngBytes);
 
       // 查找 deoldify exe
       final exePath = _findExePath(params.modelDirectoryPath, params.modelType);
