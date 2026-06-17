@@ -16,10 +16,7 @@ class _SettingAboutPageState extends State<SettingAboutPage> {
   String packageName = '';
   String version = '';
   String buildNumber = '';
-  String author = '酱天小禽兽(JTMonster)';
-  String telegram = 'https://t.me/+PindoE9yvIpmOWI9';
-  String gitRepo = 'https://github.com/jiangtian616/JHenTai';
-  String helpPage = 'https://github.com/jiangtian616/JHenTai/wiki';
+  String gitRepo = 'https://github.com/Kiastr/JhentaiSR';
 
   @override
   void initState() {
@@ -41,22 +38,10 @@ class _SettingAboutPageState extends State<SettingAboutPage> {
       body: ListView(
         padding: const EdgeInsets.only(top: 16),
         children: [
-          ListTile(title: Text('version'.tr), subtitle: Text(version.isEmpty ? '1.0.0' : version + (buildNumber.isEmpty ? '' : '+$buildNumber'))),
-          ListTile(title: Text('author'.tr), subtitle: SelectableText(author)),
           ListTile(
             title: const Text('Github'),
             subtitle: SelectableText(gitRepo),
             onTap: () => launchUrlString(gitRepo, mode: LaunchMode.externalApplication),
-          ),
-          ListTile(
-            title: const Text('Telegram(Chinese Mainly)'),
-            subtitle: Text('telegramHint'.tr + '\n' + telegram),
-            onTap: () => launchUrlString(telegram, mode: LaunchMode.externalApplication),
-          ),
-          ListTile(
-            title: Text('Q&A'.tr),
-            subtitle: SelectableText(helpPage),
-            onTap: () => launchUrlString(helpPage, mode: LaunchMode.externalApplication),
           ),
         ],
       ).withListTileTheme(context),
