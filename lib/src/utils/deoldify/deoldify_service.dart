@@ -130,6 +130,8 @@ class DeOldifyService {
           return null;
         }
 
+        log.debug('DeOldify: model directory path: $modelDirPath');
+
         final params = DeOldifyParams(
           imageBytes: imageBytes,
           modelType: modelType,
