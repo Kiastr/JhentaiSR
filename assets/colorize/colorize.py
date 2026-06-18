@@ -119,12 +119,20 @@ def colorize_image(input_path: str, output_path: str, model_path: str, render_fa
     # 准备模型输入: 将原图转为灰度，缩放到 256x256
     gray = original.convert('L')
     gray_resized = gray.resize((INFERENCE_SIZE, INFERENCE_SIZE), Image.BILINEAR)
-    input_data = np.array(gray_resized, dtype=np.float32) / 100.0  # 归一化到 [0, 1]
-    input_data = input_data[np.newaxis, np.newaxis, :, :]  # (1, 1, 256, 256)
+    input_data = np.array(gray_resized, dtype=np.float32) / 255.0  # 归一化到 [0, 1]
 
     # 加载模型并推理
     session = ort.InferenceSession(model_path, providers=['CPUExecutionProvider'])
     input_name = session.get_inputs()[0].name
+
+    # 根据模型输入通道维度决定输入 shape
+    input_shape = session.get_inputs()[0].shape
+    if len(input_shape) == 4 and input_shape[1] == 3:
+        # 模型期望 3 通道灰度图 (1, 3, 256, 256)
+        input_data = np.stack([input_data] * 3, axis=0)[np.newaxis, :, :, :]  # (1, 3, 256, 256)
+    else:
+        input_data = input_data[np.newaxis, np.newaxis, :, :]  # (1, 1, 256, 256)
+
     outputs = session.run(None, {input_name: input_data})
 
     output_data = outputs[0]  # (1, C, H, W) 或 (1, H, W, C)
