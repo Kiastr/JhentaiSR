@@ -44,12 +44,8 @@ def colorize_image(input_path: str, output_path: str, model_path: str, render_fa
     gray = cv2.cvtColor(original_bgr, cv2.COLOR_BGR2GRAY)
     gray_rgb = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
 
-    # 推理尺寸 = render_factor * 32，模型固定 256x256 时 render_factor=8
-    inference_size = render_factor * 32
-    if inference_size < 256:
-        inference_size = 256
-
-    input_image = cv2.resize(gray_rgb, (inference_size, inference_size))
+    # 当前 ONNX 模型固定 256x256，忽略 render_factor
+    input_image = cv2.resize(gray_rgb, (256, 256))
     input_data = input_image.astype(np.float32)
     input_data = input_data.transpose((2, 0, 1))  # HWC -> CHW
     input_data = np.expand_dims(input_data, axis=0).astype(np.float32)  # (1, 3, H, W)

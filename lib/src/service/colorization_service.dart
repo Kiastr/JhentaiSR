@@ -95,10 +95,9 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
       }
       _scriptPath = join(scriptDir.path, 'colorize.py');
       final scriptFile = File(_scriptPath!);
-      if (!await scriptFile.exists()) {
-        final data = await rootBundle.load('assets/colorize/colorize.py');
-        await scriptFile.writeAsBytes(data.buffer.asUint8List());
-      }
+      // 总是覆盖，确保应用更新后使用最新版脚本
+      final data = await rootBundle.load('assets/colorize/colorize.py');
+      await scriptFile.writeAsBytes(data.buffer.asUint8List());
     } catch (e) {
       log.error('Extract colorize.py failed: $e');
     }
