@@ -1,11 +1,3 @@
-![platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS%20%7C%20Windows%20%7C%20MacOS%20%7C%20Linux-brightgreen)
-![last-commit](https://img.shields.io/github/last-commit/jiangtian616/JHenTai)
-[![downloads](https://img.shields.io/github/downloads/jiangtian616/JHenTai/total)](https://github.com/jiangtian616/JHenTai/releases)
-[![downloads](https://img.shields.io/github/downloads/jiangtian616/JHenTai/latest/total)](https://github.com/jiangtian616/JHenTai/releases)
-![star](https://img.shields.io/github/stars/jiangtian616/JHenTai)
-[![issue](https://img.shields.io/badge/chat-issue-brightgreen)](https://github.com/jiangtian616/JHenTai/issues/new)
-[![telegram](https://img.shields.io/badge/chat-telegram(Chinese_Mainly)-brightgreen)](https://t.me/+PindoE9yvIpmOWI9)
-
 # JHenTai
 
 English | [简体中文](https://github.com/jiangtian616/JHenTai/blob/master/README_cn.md) | [한국어](https://github.com/jiangtian616/JHenTai/blob/master/README_kr.md)
@@ -17,52 +9,6 @@ English | [简体中文](https://github.com/jiangtian616/JHenTai/blob/master/REA
 Android & iOS & Windows & MacOS & Linux를 지원하는 E-Hentai 애플리케이션.
 
 아직 개발 중입니다. 오류 제보나 기능 요청은 언제나 환영합니다.
-
-## 다운로드 & 설치
-
-[<img src="https://raw.githubusercontent.com/jiangtian616/JHenTai/master/badges/download_from_github.png" 
-      alt="Download from GitHub" 
-      height="60">](https://github.com/jiangtian616/JHenTai/releases)
-[<img src="https://raw.githubusercontent.com/jiangtian616/JHenTai/master/badges/get_it_on_obtainium.png" 
-      alt="Get it on Obtainium" 
-      height="60">](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22top.jtmonster.jhentai%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fjiangtian616%2FJHenTai%22%2C%22author%22%3A%22jiangtian616%22%2C%22name%22%3A%22JHenTai%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22filterReleaseTitlesByRegEx%5C%22%3A%5C%22%5C%22%2C%5C%22filterReleaseNotesByRegEx%5C%22%3A%5C%22%5C%22%2C%5C%22verifyLatestTag%5C%22%3Afalse%2C%5C%22sortMethodChoice%5C%22%3A%5C%22date%5C%22%2C%5C%22useLatestAssetDateAsReleaseDate%5C%22%3Afalse%2C%5C%22releaseTitleAsVersion%5C%22%3Afalse%2C%5C%22trackOnly%5C%22%3Afalse%2C%5C%22versionExtractionRegEx%5C%22%3A%5C%22v(.*)%5C%22%2C%5C%22matchGroupToUse%5C%22%3A%5C%22%241%5C%22%2C%5C%22versionDetection%5C%22%3Atrue%2C%5C%22releaseDateAsVersion%5C%22%3Afalse%2C%5C%22useVersionCodeAsOSVersion%5C%22%3Afalse%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22%5C%22%2C%5C%22invertAPKFilter%5C%22%3Afalse%2C%5C%22autoApkFilterByArch%5C%22%3Atrue%2C%5C%22appName%5C%22%3A%5C%22JHenTai%5C%22%2C%5C%22appAuthor%5C%22%3A%5C%22JTMonster%5C%22%2C%5C%22shizukuPretendToBeGooglePlay%5C%22%3Afalse%2C%5C%22allowInsecure%5C%22%3Afalse%2C%5C%22exemptFromBackgroundUpdates%5C%22%3Afalse%2C%5C%22skipUpdateNotifications%5C%22%3Afalse%2C%5C%22about%5C%22%3A%5C%22https%3A%2F%2Fgithub.com%2Fjiangtian616%2FJHenTai%2Fblob%2Fmaster%2FREADME.md%5C%22%2C%5C%22refreshBeforeDownload%5C%22%3Afalse%7D%22%2C%22overrideSource%22%3Anull%7D)
-
-
-[<img src="https://raw.githubusercontent.com/jiangtian616/JHenTai/master/badges/add_to_altstore.png" 
-      alt="Add to AltStore" 
-      height="60">](https://intradeus.github.io/http-protocol-redirector?r=altstore://source?url=https://raw.githubusercontent.com/jiangtian616/JHenTai/refs/heads/master/altsource/AltSource.json)
-[<img src="https://raw.githubusercontent.com/jiangtian616/JHenTai/master/badges/add_to_sidestore.png" 
-      alt="Add to SideStore" 
-      height="60">](https://intradeus.github.io/http-protocol-redirector?r=sidestore://source?url=https://raw.githubusercontent.com/jiangtian616/JHenTai/refs/heads/master/altsource/AltSource.json)
-[<img src="https://raw.githubusercontent.com/jiangtian616/JHenTai/master/badges/add_to_feather.png" 
-      alt="Add to Feather" 
-      height="60">](https://intradeus.github.io/http-protocol-redirector?r=feather://source/https://raw.githubusercontent.com/jiangtian616/JHenTai/refs/heads/master/altsource/AltSource.json)
-
-Android 설치: 사용자의 디바이스 아키텍처에 맞는 .apk 파일을 다운로드 후 설치하세요.
-
-- arm64-v8a：8세대 ARM 프로세서를 탑재한 안드로이드 폰에 해당됨(일반적인 선택)
-- armeabiv-v7a：7세대 ARM 프로세서를 탑재한 안드로이드 폰에 해당됨
-- x86_64：희귀함
-
-iOS 설치: [AltStore](https://altstore.io)나 SideLoadly를 이용해 .ipa 파일을 다운로드하고 접속하세요.
-
-Windows 설치: download Windows_xxx.zip 파일을 다운로드하고 압축 해제를 하세요. 만약 프록시 서버를 이용한다면 네트워크 설정에서 프록시 주소를 설정해 주세요. Windows 11을
-사용하는데 앱 실행이 되지 않는다면 호환성 모드를 켠 상태에서 실행해 보세요. Windows Defender에 차단된 경우라면 허용으로 바꿔주세요.
-
-MacOS 설치(지원 중지): .dmg 파일을 다운로드합니다. 만약 프록시 서버를 이용한다면 네트워크 설정에서 프록시 주소를 설정해 주세요.
-
-Linux 설치(지원 중지): Linux_xxx.zip 파일을 다운로드하고 압축 해제를 하세요. 만약 프록시 서버를 이용한다면 네트워크 설정에서 프록시 주소를 설정해 주세요.
-
-## 개발 동기
-
-저의 첫 Flutter 프로젝트입니다. 저는 개발 중에 Flutter에 익숙해지는 것을 목표로 합니다. 제가 사용하는 기기는 Android 폰, iPad, Windows 컴퓨터입니다. 기존 E-hentai 앱들은
-버그가 있고, Android, iOS의 개발 경험이 없어서 소스 코드를 이해할 수도 없어서 JHenTia를 제 첫 Flutter 프로젝트로 정했습니다.
-
-2022.08.20 JHenTai는 5개월의 개발 기간을 거치며 점점 견고해졌고 초기 단계에서 작성된 갤러리 페이지, 보기 페이지, 다운로드 등의 일부 코드를 완전히 리팩토링했습니다. 새로운 기능 개발에 도움이
-되도록 서로 다른 페이지와 스타일 간의 공통점을 추출해 결합을 줄이도록 노력했습니다. 코딩 스타일, 디자인 패턴 등 Flutter 개발에 관한 조언을 해주시거나 JHenTai 개발에 참여해 주시면 정말
-감사하겠습니다.
-
-2022.10.29 저는 이제 기본적인 Flutter 개발에 더 익숙해졌고 앞으로는 다른 영역에 집중할 것입니다. 그래서 JHenTai의 업데이트는 전보다는 줄어들겠지만 버그나 오류는 제때 처리하겠습니다.
 
 ## 참조 & 감사의 말씀
 
