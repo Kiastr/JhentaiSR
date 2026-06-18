@@ -70,6 +70,7 @@ class _SettingDownloadPageState extends State<SettingDownloadPage> {
               _buildDeleteArchiveFileAfterDownload(),
               _buildRestore(),
               _buildRestoreTasksAutomatically(),
+              if (GetPlatform.isDesktop) _buildAutoColorize(),
             ],
           ).withListTileTheme(context),
         ),
@@ -320,6 +321,15 @@ class _SettingDownloadPageState extends State<SettingDownloadPage> {
       subtitle: Text('restoreTasksAutomaticallyHint'.tr),
       value: downloadSetting.restoreTasksAutomatically.value,
       onChanged: downloadSetting.saveRestoreTasksAutomatically,
+    );
+  }
+
+  Widget _buildAutoColorize() {
+    return SwitchListTile(
+      title: Text('autoColorize'.tr),
+      subtitle: Text('autoColorizeHint'.tr),
+      value: downloadSetting.autoColorize.value,
+      onChanged: downloadSetting.saveAutoColorize,
     );
   }
 

@@ -19,6 +19,7 @@ enum ConfigEnum {
   siteSetting('siteSetting'),
   styleSetting('styleSetting'),
   superResolutionSetting('SuperResolutionSetting'),
+  colorizationSetting('ColorizationSetting'),
   userSetting('userSetting'),
   archiveBotSetting('archiveBotSetting'),
   downloadSearchPageType('downloadSearchPageType'),
@@ -53,6 +54,9 @@ enum ConfigEnum {
   /// cache
   isSpreadPage('isSpreadPage'),
   galleryImageHash('galleryImageHash'),
+
+  /// colorization info (per-gallery colorization status, stored in local_config as JSON)
+  colorizationInfo('colorizationInfo'),
   ;
 
   final String key;

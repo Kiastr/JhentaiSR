@@ -6,6 +6,7 @@ import 'package:jhentai/src/config/ui_config.dart';
 import 'package:jhentai/src/extension/widget_extension.dart';
 import 'package:jhentai/src/model/gallery_url.dart';
 import 'package:jhentai/src/pages/download/mixin/gallery/gallery_download_page_mixin.dart';
+import 'package:jhentai/src/service/colorization_service.dart' as cs;
 import 'package:jhentai/src/service/super_resolution_service.dart' as srs;
 import 'package:jhentai/src/setting/preference_setting.dart';
 import 'package:jhentai/src/setting/style_setting.dart';
@@ -15,6 +16,7 @@ import '../../../../mixin/scroll_to_top_page_mixin.dart';
 import '../../../../model/gallery_image.dart';
 import '../../../../routes/routes.dart';
 import '../../../../service/gallery_download_service.dart';
+import '../../../../service/colorization_service.dart';
 import '../../../../service/super_resolution_service.dart';
 import '../../../../setting/performance_setting.dart';
 import '../../../../utils/date_util.dart';
@@ -353,6 +355,7 @@ class GalleryListDownloadPage extends StatelessWidget with Scroll2TopPageMixin, 
         const Expanded(child: SizedBox()),
         _buildIsOriginal(context, gallery),
         _buildSuperResolutionLabel(context, gallery),
+        _buildColorizationLabel(context, gallery),
         _buildPriority(context, gallery),
         _buildButton(context, gallery),
       ],
@@ -407,6 +410,41 @@ class GalleryListDownloadPage extends StatelessWidget with Scroll2TopPageMixin, 
               fontSize: 9,
               color: UIConfig.resumePauseButtonColor(context),
               decoration: superResolutionInfo.status == srs.SuperResolutionStatus.paused ? TextDecoration.lineThrough : null,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildColorizationLabel(BuildContext context, GalleryDownloadedData gallery) {
+    return GetBuilder<cs.ColorizationService>(
+      id: '${cs.ColorizationService.colorizationId}::${gallery.gid}',
+      builder: (_) {
+        cs.ColorizationInfo? colorizationInfo = colorizationService.get(gallery.gid, srs.SuperResolutionType.gallery);
+
+        if (colorizationInfo == null) {
+          return const SizedBox();
+        }
+
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            borderRadius: colorizationInfo.status == cs.ColorizationStatus.success ? null : BorderRadius.circular(4),
+            border: Border.all(color: UIConfig.resumePauseButtonColor(context)),
+            shape: colorizationInfo.status == cs.ColorizationStatus.success ? BoxShape.circle : BoxShape.rectangle,
+          ),
+          child: Text(
+            colorizationInfo.status == cs.ColorizationStatus.paused
+                ? 'Color'
+                : colorizationInfo.status == cs.ColorizationStatus.success
+                    ? 'Color'
+                    : 'Color(${colorizationInfo.imageStatuses.fold<int>(0, (previousValue, element) => previousValue + (element == cs.ColorizationStatus.success ? 1 : 0))}/${colorizationInfo.imageStatuses.length})',
+            style: TextStyle(
+              fontSize: 9,
+              color: UIConfig.resumePauseButtonColor(context),
+              decoration: colorizationInfo.status == cs.ColorizationStatus.paused ? TextDecoration.lineThrough : null,
             ),
           ),
         );

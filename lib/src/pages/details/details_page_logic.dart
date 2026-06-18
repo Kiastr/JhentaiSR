@@ -23,6 +23,7 @@ import 'package:jhentai/src/model/read_page_info.dart';
 import 'package:jhentai/src/network/eh_request.dart';
 import 'package:jhentai/src/pages/download/download_base_page.dart';
 import 'package:jhentai/src/service/read_progress_service.dart';
+import 'package:jhentai/src/service/colorization_service.dart';
 import 'package:jhentai/src/service/super_resolution_service.dart';
 import 'package:jhentai/src/setting/download_setting.dart';
 import 'package:jhentai/src/setting/my_tags_setting.dart';
@@ -717,6 +718,7 @@ class DetailsPageLogic extends GetxController with LoginRequiredMixin, Scroll2To
           readProgressRecordStorageKey: archive.gid.toString(),
           images: images,
           useSuperResolution: superResolutionService.get(archive.gid, SuperResolutionType.archive) != null,
+          useColorization: colorizationService.get(archive.gid, SuperResolutionType.archive) != null,
         ),
       );
     }
@@ -1022,6 +1024,7 @@ class DetailsPageLogic extends GetxController with LoginRequiredMixin, Scroll2To
         readProgressRecordStorageKey: state.galleryUrl.gid.toString(),
         pageCount: gallery.pageCount,
         useSuperResolution: superResolutionService.get(state.galleryUrl.gid, SuperResolutionType.gallery) != null,
+        useColorization: colorizationService.get(state.galleryUrl.gid, SuperResolutionType.gallery) != null,
       ),
     )?.whenComplete(() => Future.delayed(const Duration(milliseconds: 800))).whenComplete(() => updateSafely([readButtonId]));
   }

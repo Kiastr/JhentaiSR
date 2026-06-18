@@ -2,11 +2,12 @@ name: JHenTai Build
 
 on:
   push:
-    branches: [ "master", "main" ]
+    branches: [ "master", "main", "feature/AiColoring-add-deoldify" ]
   workflow_dispatch:
 
 jobs:
-  build:
+  build-android:
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
@@ -21,7 +22,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.27.4'
+          flutter-version: '3.32.0'
           channel: 'stable'
           cache: true
 
@@ -46,3 +47,49 @@ jobs:
         with:
           name: jhentai-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Patch Flutter to use VS 2022
+        run: |
+          # Diagnose VS installations
+          Write-Host "=== VS installations ==="
+          & "${env:PROGRAMFILES(X86)}\Microsoft Visual Studio\Installer\vswhere.exe" -all -prerelease -format value -property installationVersion -property displayName
+          # Patch cmakeGenerator to always return VS 2022 (windows-latest may have VS 2019 Build Tools
+          # which vswhere picks first, but only VS 2022 is fully installed)
+          $vsFile = "$env:FLUTTER_ROOT\packages\flutter_tools\lib\src\windows\visual_studio.dart"
+          (Get-Content $vsFile) -replace "_ => 'Visual Studio 16 2019'", "_ => 'Visual Studio 17 2022'" | Set-Content $vsFile
+          Remove-Item "$env:FLUTTER_ROOT\bin\cache\flutter_tools.snapshot" -Force -ErrorAction SilentlyContinue
+          Write-Host "Patched cmakeGenerator to use VS 2022"
+
+      - name: Clean and Get dependencies
+        run: |
+          flutter clean
+          flutter pub get
+
+      - name: Build Runner
+        run: |
+          if (Select-String -Path pubspec.yaml -Pattern "build_runner" -Quiet) {
+            dart run build_runner build --delete-conflicting-outputs
+          }
+
+      - name: Build Windows
+        run: flutter build windows --release -t lib/src/main.dart
+
+      - name: Upload Windows Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: jhentai-release-windows
+          path: build/windows/x64/runner/Release

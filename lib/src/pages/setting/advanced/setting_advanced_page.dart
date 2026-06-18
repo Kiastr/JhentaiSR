@@ -68,6 +68,7 @@ class _SettingAdvancedPageState extends State<SettingAdvancedPage> {
             _buildClearImageCache(context),
             _buildClearNetworkCache(),
             if (GetPlatform.isDesktop) _buildSuperResolution(),
+            if (GetPlatform.isDesktop) _buildColorization(),
             _buildCheckUpdate(),
             _buildCheckClipboard(),
             if (GetPlatform.isAndroid) _buildVerifyAppLinks(),
@@ -165,6 +166,14 @@ class _SettingAdvancedPageState extends State<SettingAdvancedPage> {
       title: Text('superResolution'.tr),
       trailing: const Icon(Icons.keyboard_arrow_right).marginOnly(right: 4),
       onTap: () => toRoute(Routes.superResolution),
+    );
+  }
+
+  Widget _buildColorization() {
+    return ListTile(
+      title: Text('colorization'.tr),
+      trailing: const Icon(Icons.keyboard_arrow_right).marginOnly(right: 4),
+      onTap: () => toRoute(Routes.colorization),
     );
   }
 

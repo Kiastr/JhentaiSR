@@ -19,6 +19,7 @@ import 'package:jhentai/src/pages/read/layout/horizontal_page/horizontal_page_la
 import 'package:jhentai/src/pages/read/layout/vertical_list/vertical_list_layout_logic.dart';
 import 'package:jhentai/src/pages/read/read_page_state.dart';
 import 'package:jhentai/src/service/local_config_service.dart';
+import 'package:jhentai/src/service/colorization_service.dart';
 import 'package:jhentai/src/service/super_resolution_service.dart';
 import 'package:jhentai/src/service/volume_service.dart';
 import 'package:jhentai/src/utils/eh_executor.dart';
@@ -584,6 +585,25 @@ class ReadPageLogic extends GetxController {
     }
 
     return '(${superResolutionInfo.imageStatuses.where((status) => status == SuperResolutionStatus.success).length}/${superResolutionInfo.imageStatuses.length})';
+  }
+
+  void handleTapColorizationButton() {
+    state.useColorization = !state.useColorization;
+    log.info('toggle colorization mode: ${state.useColorization}');
+    updateSafely([topMenuId]);
+    layoutLogic.updateSafely([BaseLayoutLogic.pageId]);
+  }
+
+  String getColorizationProgress() {
+    int gid = state.readPageInfo.gid!;
+    SuperResolutionType type = state.readPageInfo.mode == ReadMode.downloaded ? SuperResolutionType.gallery : SuperResolutionType.archive;
+    ColorizationInfo? colorizationInfo = colorizationService.get(gid, type);
+
+    if (colorizationInfo == null) {
+      return '';
+    }
+
+    return '(${colorizationInfo.imageStatuses.where((status) => status == ColorizationStatus.success).length}/${colorizationInfo.imageStatuses.length})';
   }
 
   void toggleDisplayFirstPageAlone() {

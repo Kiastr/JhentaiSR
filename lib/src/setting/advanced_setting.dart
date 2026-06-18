@@ -12,7 +12,7 @@ AdvancedSetting advancedSetting = AdvancedSetting();
 class AdvancedSetting with JHLifeCircleBeanWithConfigStorage implements JHLifeCircleBean {
   RxBool enableLogging = true.obs;
   RxBool enableVerboseLogging = kDebugMode.obs;
-  RxBool enableCheckUpdate = true.obs;
+  RxBool enableCheckUpdate = false.obs;
   RxBool enableCheckClipboard = true.obs;
   RxBool inNoImageMode = false.obs;
 

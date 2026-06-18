@@ -4,7 +4,9 @@ import 'package:jhentai/src/config/ui_config.dart';
 import 'package:jhentai/src/extension/get_logic_extension.dart';
 import 'package:jhentai/src/mixin/scroll_to_top_logic_mixin.dart';
 import 'package:jhentai/src/mixin/update_global_gallery_status_logic_mixin.dart';
+import 'package:jhentai/src/service/colorization_service.dart';
 import 'package:jhentai/src/setting/archive_bot_setting.dart';
+import 'package:jhentai/src/setting/colorization_setting.dart';
 import 'package:jhentai/src/widget/eh_archive_parse_source_select_dialog.dart';
 
 import '../../../../database/database.dart';
@@ -158,6 +160,7 @@ mixin ArchiveDownloadPageLogicMixin on GetxController
           readProgressRecordStorageKey: archive.gid.toString(),
           images: images,
           useSuperResolution: superResolutionService.get(archive.gid, SuperResolutionType.archive) != null,
+          useColorization: colorizationService.get(archive.gid, SuperResolutionType.archive) != null,
         ),
       );
     }
@@ -205,6 +208,33 @@ mixin ArchiveDownloadPageLogicMixin on GetxController
                 backRoute();
 
                 superResolutionService.deleteSuperResolve(archive.gid, SuperResolutionType.archive).then((_) => toast("success".tr));
+              },
+            ),
+          if (colorizationSetting.modelDirectoryPath.value != null &&
+              (colorizationService.get(archive.gid, SuperResolutionType.archive) == null ||
+                  colorizationService.get(archive.gid, SuperResolutionType.archive)?.status == ColorizationStatus.paused))
+            CupertinoActionSheetAction(
+              child: Text('colorize'.tr),
+              onPressed: () async {
+                backRoute();
+                colorizationService.colorize(archive.gid, SuperResolutionType.archive);
+              },
+            ),
+          if (colorizationService.get(archive.gid, SuperResolutionType.archive)?.status == ColorizationStatus.running)
+            CupertinoActionSheetAction(
+              child: Text('stopColorization'.tr),
+              onPressed: () async {
+                backRoute();
+                colorizationService.pauseColorize(archive.gid, SuperResolutionType.archive).then((_) => toast("success".tr));
+              },
+            ),
+          if (colorizationService.get(archive.gid, SuperResolutionType.archive)?.status == ColorizationStatus.paused ||
+              colorizationService.get(archive.gid, SuperResolutionType.archive)?.status == ColorizationStatus.success)
+            CupertinoActionSheetAction(
+              child: Text('deleteColorizedImage'.tr),
+              onPressed: () async {
+                backRoute();
+                colorizationService.deleteColorize(archive.gid, SuperResolutionType.archive).then((_) => toast("success".tr));
               },
             ),
           if (archiveDownloadInfo != null &&

@@ -4,6 +4,8 @@ import 'package:jhentai/src/config/ui_config.dart';
 import 'package:jhentai/src/extension/get_logic_extension.dart';
 import 'package:jhentai/src/mixin/scroll_to_top_logic_mixin.dart';
 import 'package:jhentai/src/mixin/update_global_gallery_status_logic_mixin.dart';
+import 'package:jhentai/src/service/colorization_service.dart';
+import 'package:jhentai/src/setting/colorization_setting.dart';
 import 'package:jhentai/src/service/super_resolution_service.dart';
 import 'package:jhentai/src/setting/super_resolution_setting.dart';
 
@@ -152,6 +154,7 @@ mixin GalleryDownloadPageLogicMixin on GetxController
           readProgressRecordStorageKey: gallery.gid.toString(),
           pageCount: gallery.pageCount,
           useSuperResolution: superResolutionService.get(gallery.gid, SuperResolutionType.gallery) != null,
+          useColorization: colorizationService.get(gallery.gid, SuperResolutionType.gallery) != null,
         ),
       );
     }
@@ -196,6 +199,34 @@ mixin GalleryDownloadPageLogicMixin on GetxController
               onPressed: () async {
                 backRoute();
                 superResolutionService.deleteSuperResolve(gallery.gid, SuperResolutionType.gallery).then((_) => toast("success".tr));
+              },
+            ),
+          if (colorizationSetting.modelDirectoryPath.value != null &&
+              downloadService.galleryDownloadInfos[gallery.gid]?.downloadProgress.downloadStatus == DownloadStatus.downloaded &&
+              (colorizationService.get(gallery.gid, SuperResolutionType.gallery) == null ||
+                  colorizationService.get(gallery.gid, SuperResolutionType.gallery)?.status == ColorizationStatus.paused))
+            CupertinoActionSheetAction(
+              child: Text('colorize'.tr),
+              onPressed: () async {
+                backRoute();
+                colorizationService.colorize(gallery.gid, SuperResolutionType.gallery);
+              },
+            ),
+          if (colorizationService.get(gallery.gid, SuperResolutionType.gallery)?.status == ColorizationStatus.running)
+            CupertinoActionSheetAction(
+              child: Text('stopColorization'.tr),
+              onPressed: () async {
+                backRoute();
+                colorizationService.pauseColorize(gallery.gid, SuperResolutionType.gallery).then((_) => toast("success".tr));
+              },
+            ),
+          if (colorizationService.get(gallery.gid, SuperResolutionType.gallery)?.status == ColorizationStatus.paused ||
+              colorizationService.get(gallery.gid, SuperResolutionType.gallery)?.status == ColorizationStatus.success)
+            CupertinoActionSheetAction(
+              child: Text('deleteColorizedImage'.tr),
+              onPressed: () async {
+                backRoute();
+                colorizationService.deleteColorize(gallery.gid, SuperResolutionType.gallery).then((_) => toast("success".tr));
               },
             ),
           CupertinoActionSheetAction(
