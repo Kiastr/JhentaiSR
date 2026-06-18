@@ -3,7 +3,7 @@
 DeOldify 上色脚本 - JHenTai 集成用
 
 使用 onnxruntime 加载 DeOldify ONNX 模型，对黑白/灰度图片进行上色。
-保留原始亮度（L 通道）以保证清晰度，仅添加颜色信息。
+直接使用模型输出的 RGB 图像，与 DeOldify.net 行为一致。
 
 依赖: onnxruntime, numpy, Pillow
 用法: python colorize.py -i <input> -o <output> -m <model.onnx> [-r <render_factor>]
@@ -22,131 +22,22 @@ import onnxruntime as ort
 INFERENCE_SIZE = 256
 
 
-def rgb_to_lab_l(rgb: np.ndarray) -> np.ndarray:
-    """
-    从 RGB 图像提取 LAB 色彩空间的 L 通道（亮度）。
-    输入: (H, W, 3) uint8 RGB
-    输出: (H, W) float32, 范围 [0, 100]
-    """
-    rgb_f = rgb.astype(np.float32) / 255.0
-    mask = rgb_f <= 0.04045
-    rgb_linear = np.where(mask, rgb_f / 12.92, ((rgb_f + 0.055) / 1.055) ** 2.4)
-
-    x = 0.4124564 * rgb_linear[..., 0] + 0.3575761 * rgb_linear[..., 1] + 0.1804375 * rgb_linear[..., 2]
-    y = 0.2126729 * rgb_linear[..., 0] + 0.7151522 * rgb_linear[..., 1] + 0.0721750 * rgb_linear[..., 2]
-    z = 0.0193339 * rgb_linear[..., 0] + 0.1191920 * rgb_linear[..., 1] + 0.9503041 * rgb_linear[..., 2]
-
-    xn, yn, zn = 0.95047, 1.0, 1.08883
-    fx = np.cbrt(np.clip(x / xn, 0, None))
-    fy = np.cbrt(np.clip(y / yn, 0, None))
-    fz = np.cbrt(np.clip(z / zn, 0, None))
-
-    eps = 216.0 / 24389.0
-    k = 24389.0 / 27.0
-
-    fx = np.where(x / xn > eps, fx, (k * (x / xn) + 16.0) / 116.0)
-    fy = np.where(y / yn > eps, fy, (k * (y / yn) + 16.0) / 116.0)
-    fz = np.where(z / zn > eps, fz, (k * (z / zn) + 16.0) / 116.0)
-
-    L = 116.0 * fy - 16.0
-    return L
-
-
-def rgb_to_lab_a(rgb: np.ndarray) -> np.ndarray:
-    """从 RGB 提取 LAB 的 a 通道"""
-    rgb_f = rgb.astype(np.float32) / 255.0
-    mask = rgb_f <= 0.04045
-    rgb_linear = np.where(mask, rgb_f / 12.92, ((rgb_f + 0.055) / 1.055) ** 2.4)
-    x = 0.4124564 * rgb_linear[..., 0] + 0.3575761 * rgb_linear[..., 1] + 0.1804375 * rgb_linear[..., 2]
-    y = 0.2126729 * rgb_linear[..., 0] + 0.7151522 * rgb_linear[..., 1] + 0.0721750 * rgb_linear[..., 2]
-    xn, yn = 0.95047, 1.0
-    fx = np.cbrt(np.clip(x / xn, 0, None))
-    fy = np.cbrt(np.clip(y / yn, 0, None))
-    eps = 216.0 / 24389.0
-    k = 24389.0 / 27.0
-    fx = np.where(x / xn > eps, fx, (k * (x / xn) + 16.0) / 116.0)
-    fy = np.where(y / yn > eps, fy, (k * (y / yn) + 16.0) / 116.0)
-    return 500.0 * (fx - fy)
-
-
-def rgb_to_lab_b(rgb: np.ndarray) -> np.ndarray:
-    """从 RGB 提取 LAB 的 b 通道"""
-    rgb_f = rgb.astype(np.float32) / 255.0
-    mask = rgb_f <= 0.04045
-    rgb_linear = np.where(mask, rgb_f / 12.92, ((rgb_f + 0.055) / 1.055) ** 2.4)
-    y = 0.2126729 * rgb_linear[..., 0] + 0.7151522 * rgb_linear[..., 1] + 0.0721750 * rgb_linear[..., 2]
-    z = 0.0193339 * rgb_linear[..., 0] + 0.1191920 * rgb_linear[..., 1] + 0.9503041 * rgb_linear[..., 2]
-    yn, zn = 1.0, 1.08883
-    fy = np.cbrt(np.clip(y / yn, 0, None))
-    fz = np.cbrt(np.clip(z / zn, 0, None))
-    eps = 216.0 / 24389.0
-    k = 24389.0 / 27.0
-    fy = np.where(y / yn > eps, fy, (k * (y / yn) + 16.0) / 116.0)
-    fz = np.where(z / zn > eps, fz, (k * (z / zn) + 16.0) / 116.0)
-    return 200.0 * (fy - fz)
-
-
-def lab_to_rgb(L: np.ndarray, a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """
-    LAB -> RGB 转换。
-    输入: L [0,100], a, b 任意范围, 形状 (H, W)
-    输出: (H, W, 3) uint8 RGB
-    """
-    fy = (L + 16.0) / 116.0
-    fx = a / 500.0 + fy
-    fz = fy - b / 200.0
-
-    eps = 216.0 / 24389.0
-    k = 24389.0 / 27.0
-
-    fx3 = fx ** 3
-    fz3 = fz ** 3
-
-    xr = np.where(fx3 > eps, fx3, (116.0 * fx - 16.0) / k)
-    zr = np.where(fz3 > eps, fz3, (116.0 * fz - 16.0) / k)
-    yr = np.where(L > k * eps, ((L + 16.0) / 116.0) ** 3, L / k)
-
-    xn, yn, zn = 0.95047, 1.0, 1.08883
-    X = xr * xn
-    Y = yr * yn
-    Z = zr * zn
-
-    r = 3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z
-    g = -0.9692660 * X + 1.8760108 * Y + 0.0415560 * Z
-    b_b = 0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z
-
-    rgb = np.stack([r, g, b_b], axis=-1)
-    rgb = np.clip(rgb, 0, 1)
-
-    mask = rgb <= 0.0031308
-    rgb_srgb = np.where(mask, 12.92 * rgb, 1.055 * np.power(np.maximum(rgb, 1e-12), 1.0 / 2.4) - 0.055)
-    rgb_srgb = np.clip(rgb_srgb * 255.0, 0, 255).astype(np.uint8)
-    return rgb_srgb
-
-
 def colorize_image(input_path: str, output_path: str, model_path: str, render_factor: int = 19) -> None:
     """
     对单张图片进行 DeOldify 上色。
 
-    流程:
-    1. 读取原图 (RGB)，保存原始尺寸
-    2. 提取原始 L 通道（在原始尺寸上）
-    3. 将灰度图缩放到 256x256，归一化后送入 ONNX 模型
-    4. 模型输出 3 通道上色结果 (1, 3, 256, 256)
-    5. 将模型输出归一化到 [0, 255]，得到 256x256 的上色图像
-    6. 从 256x256 上色结果中提取 AB 通道
-    7. 将 AB 通道缩放回原始尺寸
-    8. 用原始 L + 推理得到的 AB 重建彩色图像
+    流程（与 DeOldify.net 一致）:
+    1. 读取原图，转灰度
+    2. 缩放到 256x256，归一化后送入 ONNX 模型
+    3. 模型直接输出彩色 RGB 图像 (256x256)
+    4. 将模型输出缩放回原始尺寸
+    5. 保存
     """
     # 1. 读取原图
     original = Image.open(input_path).convert('RGB')
     orig_w, orig_h = original.size
-    original_np = np.array(original)
 
-    # 2. 提取原始 L 通道（保留原图的亮度结构）
-    orig_L = rgb_to_lab_l(original_np)
-
-    # 3. 准备模型输入: 灰度图 -> 256x256 -> 归一化到 [0, 1]
+    # 2. 准备模型输入: 灰度图 -> 256x256 -> 归一化到 [0, 1]
     gray = original.convert('L')
     gray_resized = gray.resize((INFERENCE_SIZE, INFERENCE_SIZE), Image.BILINEAR)
     input_data = np.array(gray_resized, dtype=np.float32) / 255.0
@@ -162,7 +53,7 @@ def colorize_image(input_path: str, output_path: str, model_path: str, render_fa
     else:
         input_data = input_data[np.newaxis, np.newaxis, :, :]
 
-    # 4. 推理
+    # 3. 推理
     outputs = session.run(None, {input_name: input_data})
     output_data = outputs[0]
 
@@ -175,75 +66,21 @@ def colorize_image(input_path: str, output_path: str, model_path: str, render_fa
 
     output_data = np.squeeze(output_data)
 
-    # 5. 将模型输出归一化到有效 RGB 范围
+    # 4. 将模型输出转换为 RGB uint8 图像
     if output_data.ndim == 3 and output_data.shape[-1] == 3:
-        # 模型输出 3 通道 - 将其归一化到 [0, 255] uint8
-        # DeOldify ONNX 模型输出可能是超过 [0, 1] 范围的 float 值
-        # 先裁剪到 [0, 1]，再乘以 255
-        model_rgb_float = np.clip(output_data, 0.0, 1.0)
-        model_rgb_uint8 = (model_rgb_float * 255).astype(np.uint8)
-
-        # 6. 从 256x256 的上色结果中提取 AB 通道
-        out_a = rgb_to_lab_a(model_rgb_uint8)
-        out_b = rgb_to_lab_b(model_rgb_uint8)
-    elif output_data.ndim == 3 and output_data.shape[-1] == 2:
-        # 模型直接输出 AB 通道
-        out_a = output_data[..., 0]
-        out_b = output_data[..., 1]
+        # 模型输出 3 通道 RGB，裁剪到 [0, 1] 后转 uint8
+        model_rgb = np.clip(output_data, 0.0, 1.0)
+        model_rgb_uint8 = (model_rgb * 255).astype(np.uint8)
+    elif output_data.ndim == 2:
+        # 单通道输出，转灰度 RGB
+        model_rgb_uint8 = np.stack([output_data] * 3, axis=-1).astype(np.uint8)
     else:
-        # 回退: 直接将输出作为上色结果，缩放到原始尺寸
-        if output_data.max() <= 1.0:
-            colorized_u8 = (np.clip(output_data, 0, 1) * 255).astype(np.uint8)
-        else:
-            colorized_u8 = np.clip(output_data, 0, 255).astype(np.uint8)
-        result = Image.fromarray(colorized_u8).resize((orig_w, orig_h), Image.BILINEAR)
-        result.save(output_path)
-        return
+        model_rgb = np.clip(output_data, 0.0, 1.0)
+        model_rgb_uint8 = (model_rgb * 255).astype(np.uint8)
 
-    # 7. 将 AB 通道缩放回原始尺寸
-    out_a_pil = Image.fromarray(out_a.astype(np.float32), mode='F')
-    out_b_pil = Image.fromarray(out_b.astype(np.float32), mode='F')
-    out_a_resized = out_a_pil.resize((orig_w, orig_h), Image.BILINEAR)
-    out_b_resized = out_b_pil.resize((orig_w, orig_h), Image.BILINEAR)
-
-    out_a_arr = np.array(out_a_resized)
-    out_b_arr = np.array(out_b_resized)
-
-    # 8. 保护黑色线条不被染色
-    # DeOldify 会给整图上色，导致漫画的黑色线条也带上颜色。
-    # 策略：只对接近纯黑（L 极低）且梯度大的像素抑制 AB 颜色，
-    # 其他区域（白色背景、皮肤、衣服等）保留模型生成的颜色。
-    from scipy.ndimage import sobel
-
-    gray_L = orig_L / 100.0  # 归一化到 [0, 1]
-    dx = sobel(gray_L, axis=1)
-    dy = sobel(gray_L, axis=0)
-    gradient = np.sqrt(dx ** 2 + dy ** 2)
-
-    # 纯黑线条：亮度极低 (L<14) 同时梯度较大，保持无色
-    dark_thr, dark_fade = 4.0, 14.0
-    line_mask = (orig_L < dark_fade) & (gradient > 0.12)
-    line_strength = np.clip((dark_fade - orig_L) / (dark_fade - dark_thr), 0, 1)
-    line_weight = np.where(line_mask, 1.0 - line_strength, 1.0)
-    line_weight = np.where(orig_L < dark_thr, 0.0, line_weight)
-
-    # 纯白背景：亮度极高 (L>98) 保持无色，避免整图被染成青色
-    white_thr, white_fade = 98.0, 96.0
-    white_weight = np.ones_like(orig_L)
-    white_weight = np.where(orig_L > white_thr, 0.0, white_weight)
-    white_weight = np.where(
-        (orig_L > white_fade) & (orig_L <= white_thr),
-        (white_thr - orig_L) / (white_thr - white_fade),
-        white_weight,
-    )
-
-    color_weight = line_weight * white_weight
-    out_a_arr = out_a_arr * color_weight
-    out_b_arr = out_b_arr * color_weight
-
-    # 9. 用原始 L + 抑制后的 AB 重建彩色图像
-    result_rgb = lab_to_rgb(orig_L, out_a_arr, out_b_arr)
-    result = Image.fromarray(result_rgb)
+    # 5. 将 256x256 的上色结果缩放回原始尺寸
+    colorized = Image.fromarray(model_rgb_uint8, mode='RGB')
+    result = colorized.resize((orig_w, orig_h), Image.LANCZOS)
     result.save(output_path)
 
 
