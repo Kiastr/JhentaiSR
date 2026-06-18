@@ -167,6 +167,13 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
       }
     }
 
+    String? envError = await _checkEnvironment();
+    if (envError != null) {
+      toast(envError, isShort: false);
+      log.error(envError);
+      return false;
+    }
+
     ColorizationInfo? info = get(gid, type);
     if (info?.status == ColorizationStatus.success) {
       return true;
@@ -262,6 +269,49 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
     updateSafely(['$colorizationId::$gid']);
   }
 
+  /// 检查上色所需环境：Python 可执行文件、关键依赖、模型文件、脚本文件
+  Future<String?> _checkEnvironment() async {
+    String pythonPath = colorizationSetting.pythonPath.value ?? (GetPlatform.isWindows ? 'python' : 'python3');
+
+    // 1. 检查 Python 可执行文件是否存在
+    if (colorizationSetting.pythonPath.value != null) {
+      if (!await File(pythonPath).exists()) {
+        return 'Python 可执行文件不存在: $pythonPath';
+      }
+    }
+
+    // 2. 检查关键 Python 依赖
+    try {
+      ProcessResult result = await Process.run(
+        pythonPath,
+        ['-c', 'import onnxruntime, numpy, PIL; print("ok")'],
+        runInShell: true,
+      );
+      if (result.exitCode != 0 || (result.stdout as String).trim() != 'ok') {
+        return 'Python 依赖缺失，请在终端运行：\n$pythonPath -m pip install onnxruntime numpy Pillow';
+      }
+    } catch (e) {
+      return '无法调用 Python ($pythonPath)，请检查是否已安装 Python 3.8+ 并添加到系统 PATH';
+    }
+
+    // 3. 检查模型文件
+    String? modelDir = colorizationSetting.modelDirectoryPath.value;
+    if (modelDir == null) {
+      return '未设置 DeOldify 模型目录，请先下载模型';
+    }
+    String modelPath = join(modelDir, colorizationSetting.model.value.fileName);
+    if (!await File(modelPath).exists()) {
+      return '模型文件不存在: $modelPath，请先下载模型';
+    }
+
+    // 4. 检查脚本文件是否已提取
+    if (_scriptPath == null || !await File(_scriptPath!).exists()) {
+      return '上色脚本 colorize.py 未就绪，请重启应用后重试';
+    }
+
+    return null;
+  }
+
   Future<void> _doColorize(int gid, SuperResolutionType type) async {
     List<GalleryImage> rawImages;
     if (type == SuperResolutionType.gallery) {
@@ -352,9 +402,17 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
 
     info.currentProcess = process;
 
-    process.stderr.listen((event) {
-      log.trace(String.fromCharCodes(event).trim());
-    });
+    final StringBuffer outputBuffer = StringBuffer();
+    void appendOutput(List<int> event) {
+      final String text = utf8.decode(event, allowMalformed: true).trim();
+      if (text.isNotEmpty) {
+        outputBuffer.writeln(text);
+        log.trace(text);
+      }
+    }
+
+    process.stdout.listen(appendOutput);
+    process.stderr.listen(appendOutput);
 
     int exitCode = await process.exitCode;
 
@@ -364,11 +422,13 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
     }
 
     if (exitCode != 0) {
-      toast('${'internalError'.tr} exitCode:$exitCode', isShort: false);
-      log.error('${'internalError'.tr} exitCode:$exitCode');
+      String output = outputBuffer.toString().trim();
+      String errorMsg = '${'internalError'.tr} exitCode:$exitCode\n$output';
+      toast(errorMsg, isShort: false);
+      log.error(errorMsg);
       log.uploadError(
         Exception('Process Error'),
-        extraInfos: {'rawImage': rawImage, 'exitCode': exitCode},
+        extraInfos: {'rawImage': rawImage, 'exitCode': exitCode, 'output': output},
       );
       return false;
     }
