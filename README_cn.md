@@ -5,6 +5,8 @@
 
 [常见问题，提问前必看](https://github.com/jiangtian616/JHenTai/wiki/%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98)
 
+[点击打开 上色功能所需python环境 ](./上色功能所需环境/)
+
 ## 定位
 
 E-hentai 的一个多端app，现支持Android、iOS、Windows、MacOS和Linux系统。
