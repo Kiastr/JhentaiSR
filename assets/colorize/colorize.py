@@ -209,7 +209,39 @@ def colorize_image(input_path: str, output_path: str, model_path: str, render_fa
     out_a_arr = np.array(out_a_resized)
     out_b_arr = np.array(out_b_resized)
 
-    # 8. 用原始 L + 推理得到的 AB 重建彩色图像
+    # 8. 保护黑色线条不被染色
+    # DeOldify 会给整图上色，导致漫画的黑色线条也带上颜色。
+    # 策略：只对接近纯黑（L 极低）且梯度大的像素抑制 AB 颜色，
+    # 其他区域（白色背景、皮肤、衣服等）保留模型生成的颜色。
+    from scipy.ndimage import sobel
+
+    gray_L = orig_L / 100.0  # 归一化到 [0, 1]
+    dx = sobel(gray_L, axis=1)
+    dy = sobel(gray_L, axis=0)
+    gradient = np.sqrt(dx ** 2 + dy ** 2)
+
+    # 纯黑线条：亮度极低 (L<14) 同时梯度较大，保持无色
+    dark_thr, dark_fade = 4.0, 14.0
+    line_mask = (orig_L < dark_fade) & (gradient > 0.12)
+    line_strength = np.clip((dark_fade - orig_L) / (dark_fade - dark_thr), 0, 1)
+    line_weight = np.where(line_mask, 1.0 - line_strength, 1.0)
+    line_weight = np.where(orig_L < dark_thr, 0.0, line_weight)
+
+    # 纯白背景：亮度极高 (L>98) 保持无色，避免整图被染成青色
+    white_thr, white_fade = 98.0, 96.0
+    white_weight = np.ones_like(orig_L)
+    white_weight = np.where(orig_L > white_thr, 0.0, white_weight)
+    white_weight = np.where(
+        (orig_L > white_fade) & (orig_L <= white_thr),
+        (white_thr - orig_L) / (white_thr - white_fade),
+        white_weight,
+    )
+
+    color_weight = line_weight * white_weight
+    out_a_arr = out_a_arr * color_weight
+    out_b_arr = out_b_arr * color_weight
+
+    # 9. 用原始 L + 抑制后的 AB 重建彩色图像
     result_rgb = lab_to_rgb(orig_L, out_a_arr, out_b_arr)
     result = Image.fromarray(result_rgb)
     result.save(output_path)
