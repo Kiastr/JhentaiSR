@@ -36,9 +36,11 @@ def colorize_image(input_path: str, output_path: str, model_path: str, render_fa
     original_np = np.array(original)
     original_bgr = cv2.cvtColor(original_np, cv2.COLOR_RGB2BGR)
 
-    # 提取原始 L 通道（保留原图的亮度结构）
-    lab = cv2.cvtColor(original_bgr, cv2.COLOR_BGR2LAB)
-    target_l, _, _ = cv2.split(lab)
+    # 提取 targetL：与官方 deoldify-onnx (color/deoldify.py) 一致，取 BGR 的 B 通道。
+    # 注意：官方实现并未使用真正的 LAB 亮度，而是用 B 通道作为 targetL，
+    # 与下方 LAB 合并的逻辑配合，才能得到官方那种偏暖、自然的上色风格。
+    # 之前使用真正的 L 通道会导致最终结果整体偏蓝。
+    target_l, _, _ = cv2.split(original_bgr)
 
     # 2. 准备模型输入: 灰度图 -> RGB(3通道相同) -> 缩放 -> 0-255 float
     gray = cv2.cvtColor(original_bgr, cv2.COLOR_BGR2GRAY)
@@ -55,23 +57,22 @@ def colorize_image(input_path: str, output_path: str, model_path: str, render_fa
     input_name = session.get_inputs()[0].name
     colorized = session.run(None, {input_name: input_data})[0][0]
 
-    # 4. 后处理: CHW -> HWC -> uint8 -> 缩放 -> 高斯模糊
+    # 4. 后处理：严格对齐官方 color/deoldify.py 的 colorize 方法
     colorized = colorized.transpose(1, 2, 0)  # CHW -> HWC
-    colorized = cv2.cvtColor(colorized, cv2.COLOR_BGR2RGB)  # 模型输出 BGR -> RGB
-    colorized = np.clip(colorized, 0, 255).astype(np.uint8)
+    # 与官方一致：把模型输出当作 BGR 转成 RGB，随后直接用 COLOR_BGR2LAB 转换。
+    # 这里不要先做 RGB2BGR 转回，否则 AB 通道语义会与官方相反，导致偏蓝。
+    colorized = cv2.cvtColor(colorized, cv2.COLOR_BGR2RGB).astype(np.uint8)
     colorized = cv2.resize(colorized, (orig_w, orig_h))
     colorized = cv2.GaussianBlur(colorized, (13, 13), 0)
 
-    # 5. LAB 合并: 模型颜色的 AB + 原始 L
-    colorized_bgr = cv2.cvtColor(colorized, cv2.COLOR_RGB2BGR)
-    colorized_lab = cv2.cvtColor(colorized_bgr, cv2.COLOR_BGR2LAB)
+    # 5. LAB 合并：官方用 targetL(B 通道) + 模型颜色的 AB
+    colorized_lab = cv2.cvtColor(colorized, cv2.COLOR_BGR2LAB)
     _, a, b = cv2.split(colorized_lab)
     result_lab = cv2.merge((target_l, a, b))
     result_bgr = cv2.cvtColor(result_lab, cv2.COLOR_LAB2BGR)
-    result_rgb = cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
 
     # 6. 保存
-    result = Image.fromarray(result_rgb)
+    result = Image.fromarray(cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB))
     result.save(output_path)
 
 
