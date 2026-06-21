@@ -118,8 +118,8 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
     pythonDownloadState = LoadingState.loading;
     updateSafely([pythonDownloadId]);
 
-    final String downloadPath = join(pathService.getVisibleDir().path, 'python_env.zip');
-    final String extractPath = join(pathService.getVisibleDir().path, 'python_env');
+    final String downloadPath = join(pathService.getVisibleDir().path, 'python_env_deoldify.zip');
+    final String extractPath = join(pathService.getVisibleDir().path, 'python_env_deoldify');
 
     try {
       await retry(
@@ -155,7 +155,7 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
     try {
       File(downloadPath).deleteSync();
     } catch (e) {
-      log.error('Delete python_env.zip failed: $e');
+      log.error('Delete python_env_deoldify.zip failed: $e');
     }
 
     if (GetPlatform.isWindows) {
