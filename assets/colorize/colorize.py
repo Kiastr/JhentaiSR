@@ -56,10 +56,10 @@ def colorize_deoldify(input_path: str, output_path: str, model_path: str, device
 
 def colorize_ddcolor_tiny(input_path: str, output_path: str, model_path: str, device: str = 'cpu') -> None:
     """DDColor Tiny (256x256) 上色逻辑"""
-    img = cv2.imread(input_path)
-    if img is None:
-        raise ValueError(f"Could not read image: {input_path}")
-    
+    # 用 PIL 读取图像再转 BGR，避免 cv2.imread 在 Windows 上不支持非 ASCII 路径的问题
+    _img = Image.open(input_path).convert('RGB')
+    img = cv2.cvtColor(np.array(_img), cv2.COLOR_RGB2BGR)
+
     height, width = img.shape[:2]
     img_norm = (img / 255.0).astype(np.float32)
     orig_l = cv2.cvtColor(img_norm, cv2.COLOR_BGR2Lab)[:, :, :1]
@@ -86,7 +86,8 @@ def colorize_ddcolor_tiny(input_path: str, output_path: str, model_path: str, de
     output_bgr = cv2.cvtColor(output_lab, cv2.COLOR_LAB2BGR)
     output_img = (output_bgr * 255.0).round().clip(0, 255).astype(np.uint8)
     
-    cv2.imwrite(output_path, output_img)
+    # 用 PIL 保存，避免 cv2.imwrite 在 Windows 上不支持非 ASCII 路径的问题
+    Image.fromarray(cv2.cvtColor(output_img, cv2.COLOR_BGR2RGB)).save(output_path)
 
 
 def main():
