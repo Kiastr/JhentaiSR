@@ -10,7 +10,7 @@ ColorizationSetting colorizationSetting = ColorizationSetting();
 
 /// 上色设置
 class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLifeCircleBean {
-  static const String pythonEnvDownloadUrl = 'https://github.com/Kiastr/JhentaiSR/releases/download/v8.0.12/python_env.zip';
+  static const String pythonEnvDownloadUrl = 'https://github.com/Kiastr/JhentaiSR/releases/download/python-env-v1/python_env_ddcolor.zip';
 
   /// Python 可执行文件路径，为 null 时使用系统默认 python
   RxnString pythonPath = RxnString();
