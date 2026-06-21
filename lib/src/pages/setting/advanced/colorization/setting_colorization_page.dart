@@ -36,6 +36,7 @@ class SettingColorizationPage extends StatelessWidget {
         () => ListView(
           padding: const EdgeInsets.only(top: 16),
           children: [
+            _buildInstruction(),
             _buildPythonPath(),
             _buildDownloadPythonEnv(),
             _buildModelDirectoryPath(),
@@ -43,6 +44,20 @@ class SettingColorizationPage extends StatelessWidget {
             _buildRenderFactor(),
           ],
         ).withListTileTheme(context),
+      ),
+    );
+  }
+
+  Widget _buildInstruction() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+      child: Text(
+        'colorizationInstruction'.tr,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.bold,
+          color: UIConfig.primaryColor(context),
+        ),
       ),
     );
   }

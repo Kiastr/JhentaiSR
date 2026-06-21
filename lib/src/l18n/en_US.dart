@@ -423,6 +423,7 @@ class en_US {
       'deleteSuperResolvedImage': 'Delete Super Resolved Image',
       'superResolveOriginalImageHint': 'Process original image cost more time, space and performance, are you sure to continue?',
       'colorization': 'DeOldify Colorization',
+      'colorizationInstruction': 'After downloading, long-press to select the manga, then click the colorize button in the popup window to colorize it.',
       'colorize': 'Colorize',
       'stopColorization': 'Stop Colorization',
       'deleteColorizedImage': 'Delete Colorized Image',

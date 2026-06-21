@@ -423,6 +423,7 @@ class zh_CN {
       'deleteSuperResolvedImage': '删除图片超分辨率后的图片',
       'superResolveOriginalImageHint': '处理原图会耗费更多的时间、空间和性能，确定继续？',
       'colorization': 'DeOldify 上色',
+      'colorizationInstruction': '下载后长按选中漫画再点击弹出窗口上色按钮即可上色',
       'colorize': '上色',
       'stopColorization': '停止上色',
       'deleteColorizedImage': '删除上色后的图片',
