@@ -1,12 +1,14 @@
 # JHenTai
 
-English | [简体中文](https://github.com/jiangtian616/JHenTai/blob/master/README_cn.md) | [한국어](https://github.com/jiangtian616/JHenTai/blob/master/README_kr.md)
+English | [简体中文](./README_cn.md) | [한국어](./README_kr.md)
 
 [Q&A](https://github.com/jiangtian616/JHenTai/wiki/Common-Questions)
 
 ## 개요
 
 Android & iOS & Windows & MacOS & Linux를 지원하는 E-Hentai 애플리케이션.
+
+이 개정판에는 AI 색칠과 AI 초해상도 기능이 추가되었다
 
 아직 개발 중입니다. 오류 제보나 기능 요청은 언제나 환영합니다.
 
