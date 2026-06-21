@@ -11,6 +11,8 @@
 
 E-hentai 的一个多端app，现支持Android、iOS、Windows、MacOS和Linux系统。
 
+此改版添加了AI上色和AI超分辨率功能
+
 仍在发展阶段，十分欢迎提交各种bug反馈或Feature Request。
 
 
