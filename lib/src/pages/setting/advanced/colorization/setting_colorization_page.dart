@@ -34,12 +34,13 @@ class SettingColorizationPage extends StatelessWidget {
           padding: const EdgeInsets.only(top: 16),
           children: [
             _buildInstruction(context),
-            _buildPythonPath(),
-            _buildDownloadPythonEnv(),
+            if (GetPlatform.isDesktop) _buildPythonPath(),
+            if (GetPlatform.isDesktop) _buildDownloadPythonEnv(),
             _buildModelDirectoryPath(),
             _buildModelType(),
-            _buildGPUConfig(),
+            if (GetPlatform.isDesktop) _buildGPUConfig(),
             _buildRenderFactor(),
+            _buildNumThreads(),
           ],
         ).withListTileTheme(context),
       ),
@@ -208,6 +209,27 @@ class SettingColorizationPage extends StatelessWidget {
           DropdownMenuItem(child: Text('31'), value: 31),
           DropdownMenuItem(child: Text('35'), value: 35),
           DropdownMenuItem(child: Text('39'), value: 39),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNumThreads() {
+    return ListTile(
+      title: Text('推理线程数'),
+      subtitle: Text(!GetPlatform.isDesktop
+          ? 'Dart 原生 ONNX 推理线程数（手机建议 2-4）'
+          : '推理线程数（桌面端可选）'),
+      trailing: DropdownButton<int>(
+        value: colorizationSetting.numThreads.value ?? 2,
+        elevation: 4,
+        alignment: AlignmentDirectional.centerEnd,
+        onChanged: (int? newValue) => colorizationSetting.saveNumThreads(newValue!),
+        items: const [
+          DropdownMenuItem(child: Text('1'), value: 1),
+          DropdownMenuItem(child: Text('2'), value: 2),
+          DropdownMenuItem(child: Text('4'), value: 4),
+          DropdownMenuItem(child: Text('8'), value: 8),
         ],
       ),
     );

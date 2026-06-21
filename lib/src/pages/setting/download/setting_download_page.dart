@@ -70,7 +70,7 @@ class _SettingDownloadPageState extends State<SettingDownloadPage> {
               _buildDeleteArchiveFileAfterDownload(),
               _buildRestore(),
               _buildRestoreTasksAutomatically(),
-              if (GetPlatform.isDesktop) _buildAutoColorize(),
+              _buildAutoColorize(),
             ],
           ).withListTileTheme(context),
         ),

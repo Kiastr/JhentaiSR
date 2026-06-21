@@ -315,8 +315,7 @@ class _ReadPageState extends State<ReadPage> with ScrollStatusListener, WindowLi
                   minimumSize: const Size(56, 56),
                 ),
               ),
-            if (GetPlatform.isDesktop &&
-                state.readPageInfo.gid != null &&
+            if (state.readPageInfo.gid != null &&
                 (state.readPageInfo.mode == ReadMode.downloaded || state.readPageInfo.mode == ReadMode.archive) &&
                 state.readPageInfo.useColorization)
               TextButton(

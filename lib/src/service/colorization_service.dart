@@ -25,6 +25,7 @@ import 'log.dart';
 import 'path_service.dart';
 import 'super_resolution_service.dart' show SuperResolutionType;
 import '../utils/archive_util.dart';
+import '../utils/colorize/colorize_upscaler.dart';
 import '../utils/eh_executor.dart';
 import '../utils/toast_util.dart';
 import '../widget/loading_state_indicator.dart';
@@ -45,6 +46,9 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
   String pythonDownloadProgress = '0%';
 
   EHExecutor executor = EHExecutor(concurrency: 1);
+
+  /// 移动端使用 Dart 原生 ONNX 推理（不依赖 Python 环境）
+  bool get _useDartNative => !GetPlatform.isDesktop;
 
   /// 内存中的上色信息表: gid -> type -> info
   final Map<int, Map<int, ColorizationInfo>> _infoTable = {};
@@ -355,6 +359,19 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
 
   /// 检查上色所需环境：Python 可执行文件、关键依赖、模型文件、脚本文件
   Future<String?> _checkEnvironment() async {
+    // 移动端：使用 Dart 原生 ONNX 推理，无需 Python，仅检查模型文件
+    if (_useDartNative) {
+      String? modelDir = colorizationSetting.modelDirectoryPath.value;
+      if (modelDir == null) {
+        return '未设置上色模型目录，请先下载模型';
+      }
+      String modelPath = join(modelDir, colorizationSetting.model.value.fileName);
+      if (!await File(modelPath).exists()) {
+        return '模型文件不存在: $modelPath，请先下载模型';
+      }
+      return null;
+    }
+
     String pythonPath = colorizationSetting.pythonPath.value ?? (GetPlatform.isWindows ? 'python' : 'python3');
 
     // 1. 检查 Python 可执行文件是否存在
@@ -424,8 +441,14 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
         continue;
       }
 
-      if (colorizationSetting.modelDirectoryPath.value == null || _scriptPath == null) {
-        return;
+      if (_useDartNative) {
+        if (colorizationSetting.modelDirectoryPath.value == null) {
+          return;
+        }
+      } else {
+        if (colorizationSetting.modelDirectoryPath.value == null || _scriptPath == null) {
+          return;
+        }
       }
 
       info.imageStatuses[i] = ColorizationStatus.running;
@@ -466,6 +489,11 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
         return false;
       }
       return true;
+    }
+
+    // 移动端：使用 Dart 原生 ONNX 推理
+    if (_useDartNative) {
+      return await _handleImageDart(rawImage);
     }
 
     Process? process;
@@ -558,6 +586,51 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
       workingDirectory: pathService.getVisibleDir().path,
       runInShell: true,
     );
+  }
+
+  /// 移动端：使用 Dart 原生 ONNX Runtime 上色（不需要 Python）
+  Future<bool> _handleImageDart(GalleryImage rawImage) async {
+    log.download('start to colorize image (Dart native) ${rawImage.path}');
+
+    final String inputAbsolutePath =
+        GalleryDownloadService.computeImageDownloadAbsolutePathFromRelativePath(rawImage.path!);
+    final String outputAbsolutePath = computeImageOutputAbsolutePath(rawImage.path!);
+    final String modelPath = join(
+      colorizationSetting.modelDirectoryPath.value!,
+      colorizationSetting.model.value.fileName,
+    );
+
+    final ColorizeModelType type = colorizationSetting.model.value.scriptType == 'deoldify'
+        ? ColorizeModelType.deoldify
+        : ColorizeModelType.ddcolor;
+
+    try {
+      final params = ColorizeParams(
+        inputPath: inputAbsolutePath,
+        outputPath: outputAbsolutePath,
+        modelPath: modelPath,
+        modelType: type,
+        threads: colorizationSetting.numThreads.value,
+      );
+
+      final bool success = type == ColorizeModelType.deoldify
+          ? await ColorizeUpscaler.colorizeDeOldify(params)
+          : await ColorizeUpscaler.colorizeDDColor(params);
+
+      if (!success) {
+        String errorMsg = '上色失败: ${rawImage.path}';
+        toast(errorMsg, isShort: false);
+        log.error(errorMsg);
+        return false;
+      }
+
+      return true;
+    } catch (e, s) {
+      toast('internalError'.tr + e.toString(), isShort: false);
+      log.error('Dart colorization failed', e, s);
+      log.uploadError(e, extraInfos: {'rawImage': rawImage});
+      return false;
+    }
   }
 
   void _checkInfoSourceExists() {

@@ -27,6 +27,9 @@ class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLi
   /// 是否使用 GPU 加速
   RxBool useGPU = true.obs;
 
+  /// 推理线程数（移动端 Dart 原生 ONNX Runtime 使用）
+  RxnInt numThreads = RxnInt(2);
+
   @override
   ConfigEnum get configEnum => ConfigEnum.colorizationSetting;
 
@@ -39,6 +42,7 @@ class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLi
     model.value = map['model'] == null ? ColorizationModelType.Artistic : ColorizationModelType.values[map['model']];
     renderFactor.value = map['renderFactor'] ?? 19;
     useGPU.value = map['useGPU'] ?? true;
+    numThreads.value = map['numThreads'] ?? 2;
   }
 
   @override
@@ -49,6 +53,7 @@ class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLi
       'model': model.value.index,
       'renderFactor': renderFactor.value,
       'useGPU': useGPU.value,
+      'numThreads': numThreads.value,
     });
   }
 
@@ -85,6 +90,12 @@ class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLi
   Future<void> saveUseGPU(bool useGPU) async {
     log.debug('saveUseGPU:$useGPU');
     this.useGPU.value = useGPU;
+    await saveBeanConfig();
+  }
+
+  Future<void> saveNumThreads(int numThreads) async {
+    log.debug('saveNumThreads:$numThreads');
+    this.numThreads.value = numThreads;
     await saveBeanConfig();
   }
 }
