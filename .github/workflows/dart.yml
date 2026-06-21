@@ -2,7 +2,7 @@ name: JHenTai Build
 
 on:
   push:
-    branches: [ "master", "main", "feature/AiColoring-add-deoldify" ]
+    branches: [ "master", "main", "feature/AiColoring-add-deoldify", "feature/AiColoring-add-ddcolor" ]
   workflow_dispatch:
 
 jobs:
