@@ -432,7 +432,7 @@ class zh_CN {
       'renderFactor': '渲染因子',
       'renderFactorHint': '控制模型内部处理分辨率，越大越清晰但越慢',
       'downloadPythonEnv': '下载 Python 环境',
-      'downloadPythonEnvHint': '解压后运行 bat 文件，然后在 Python 路径处选择解压目录下的 exe 文件',
+      'downloadPythonEnvHint': '点击下载 Python 环境，完成后将自动解压并配置路径',
       'verityAppLinks4Android12': '验证应用链接（安卓12+）',
       'verityAppLinks4Android12Hint': '对于Android 12+，您需要手动添加链接到已验证链接才能在其他应用中唤起JHenTai',
       'noImageMode': '无图模式',

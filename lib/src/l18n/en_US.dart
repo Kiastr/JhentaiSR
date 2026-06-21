@@ -432,7 +432,7 @@ class en_US {
       'renderFactor': 'Render Factor',
       'renderFactorHint': 'Controls internal processing resolution, higher is clearer but slower',
       'downloadPythonEnv': 'Download Python Environment',
-      'downloadPythonEnvHint': 'Extract and run the bat file, then select the exe file in the extracted directory at Python Path',
+      'downloadPythonEnvHint': 'Click to download Python environment, it will be automatically extracted and configured after download',
       'verityAppLinks4Android12': 'Verity App Links(Android 12+)',
       'verityAppLinks4Android12Hint': 'For Android 12+, you need to manually add link to verified links in order to open JHenTai in 3-rd apps',
       'noImageMode': 'No Image Mode',

@@ -37,11 +37,15 @@ ColorizationService colorizationService = ColorizationService();
 /// 仅桌面端（Windows/macOS/Linux）可用。
 class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch implements JHLifeCircleBean {
   static const String downloadId = 'colorizationDownloadId';
+  static const String pythonDownloadId = 'pythonDownloadId';
   static const String colorizationId = 'colorizationId';
   static const String colorizationImageId = 'colorizationImageId';
 
   LoadingState downloadState = LoadingState.idle;
   String downloadProgress = '0%';
+
+  LoadingState pythonDownloadState = LoadingState.idle;
+  String pythonDownloadProgress = '0%';
 
   EHExecutor executor = EHExecutor(concurrency: 1);
 
@@ -105,6 +109,90 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
 
   ColorizationInfo? get(int gid, SuperResolutionType type) {
     return _infoTable[gid]?[type.index];
+  }
+
+  /// 下载并自动配置 Python 环境
+  Future<void> downloadPythonEnv() async {
+    pythonDownloadProgress = '0%';
+    pythonDownloadState = LoadingState.loading;
+    updateSafely([pythonDownloadId]);
+
+    final String downloadPath = join(pathService.getVisibleDir().path, 'python_env.zip');
+    final String extractPath = join(pathService.getVisibleDir().path, 'python_env');
+
+    try {
+      await retry(
+        () => ehRequest.download(
+          url: ColorizationSetting.pythonEnvDownloadUrl,
+          path: downloadPath,
+          receiveTimeout: 15 * 60 * 1000,
+          onReceiveProgress: (count, total) {
+            pythonDownloadProgress = (count / total * 100).toStringAsFixed(2) + '%';
+            updateSafely([pythonDownloadId]);
+          },
+        ),
+        maxAttempts: 5,
+        onRetry: (error) => log.warning('Download python env failed, retry.'),
+      );
+    } on DioException catch (e) {
+      log.error('Download python env failed after 5 times', e.errorMsg);
+      pythonDownloadState = LoadingState.error;
+      updateSafely([pythonDownloadId]);
+      return;
+    }
+
+    log.info('Python env downloaded, start unzipping...');
+
+    bool success = await extractZipArchive(downloadPath, extractPath);
+    if (!success) {
+      log.error('Extract python env failed');
+      pythonDownloadState = LoadingState.error;
+      updateSafely([pythonDownloadId]);
+      return;
+    }
+
+    try {
+      File(downloadPath).deleteSync();
+    } catch (e) {
+      log.error('Delete python_env.zip failed: $e');
+    }
+
+    if (GetPlatform.isWindows) {
+      log.info('Running install.bat...');
+      try {
+        ProcessResult result = await Process.run(
+          'install.bat',
+          [],
+          workingDirectory: extractPath,
+          runInShell: true,
+        );
+        log.info('install.bat finished with exitCode: ${result.exitCode}');
+      } catch (e) {
+        log.error('Run install.bat failed: $e');
+      }
+    }
+
+    String pythonPath = join(extractPath, GetPlatform.isWindows ? 'python.exe' : 'bin/python3');
+    if (await File(pythonPath).exists()) {
+      await colorizationSetting.savePythonPath(pythonPath);
+    } else {
+      // 尝试在解压目录下递归寻找 python.exe (针对可能的嵌套目录)
+      try {
+        List<FileSystemEntity> entities = Directory(extractPath).listSync(recursive: true);
+        for (var entity in entities) {
+          if (entity is File && basename(entity.path).toLowerCase() == (GetPlatform.isWindows ? 'python.exe' : 'python3')) {
+            await colorizationSetting.savePythonPath(entity.path);
+            break;
+          }
+        }
+      } catch (e) {
+        log.error('Find python executable failed: $e');
+      }
+    }
+
+    pythonDownloadState = LoadingState.success;
+    updateSafely([pythonDownloadId]);
+    toast('success'.tr);
   }
 
   /// 下载 DeOldify ONNX 模型文件

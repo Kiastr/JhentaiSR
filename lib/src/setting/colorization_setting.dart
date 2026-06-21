@@ -13,6 +13,8 @@ ColorizationSetting colorizationSetting = ColorizationSetting();
 /// 基于 DeOldify ONNX 模型，通过 Python + onnxruntime 进行推理。
 /// 支持 Artistic（色彩鲜艳）和 Stable（更自然稳定）两种模型。
 class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLifeCircleBean {
+  static const String pythonEnvDownloadUrl = 'https://github.com/Kiastr/JhentaiSR/releases/download/v8.0.12/python_env.zip';
+
   /// Python 可执行文件路径，为 null 时使用系统默认 python
   RxnString pythonPath = RxnString();
 
