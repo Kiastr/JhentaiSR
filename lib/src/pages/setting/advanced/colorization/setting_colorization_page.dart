@@ -37,6 +37,7 @@ class SettingColorizationPage extends StatelessWidget {
           padding: const EdgeInsets.only(top: 16),
           children: [
             _buildPythonPath(),
+            _buildDownloadPythonEnv(),
             _buildModelDirectoryPath(),
             _buildModelType(),
             _buildRenderFactor(),
@@ -70,6 +71,15 @@ class SettingColorizationPage extends StatelessWidget {
 
         colorizationSetting.savePythonPath(result.files.first.path);
       },
+    );
+  }
+
+  Widget _buildDownloadPythonEnv() {
+    return ListTile(
+      title: Text('downloadPythonEnv'.tr),
+      subtitle: Text('downloadPythonEnvHint'.tr),
+      trailing: const Icon(Icons.download),
+      onTap: () => launchUrlString('https://github.com/Kiastr/JhentaiSR/tree/e88d7161c1ff9a57dbc73c0d076eae2e3d9102ba/%E4%B8%8A%E8%89%B2%E5%8A%9F%E8%83%BD%E6%89%80%E9%9C%80python%E7%8E%AF%E5%A2%83'),
     );
   }
 

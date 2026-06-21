@@ -68,7 +68,7 @@ class _SettingAdvancedPageState extends State<SettingAdvancedPage> {
             _buildClearImageCache(context),
             _buildClearNetworkCache(),
             if (GetPlatform.isDesktop) _buildSuperResolution(),
-            if (GetPlatform.isDesktop) _buildColorization(),
+
             _buildCheckUpdate(),
             _buildCheckClipboard(),
             if (GetPlatform.isAndroid) _buildVerifyAppLinks(),
