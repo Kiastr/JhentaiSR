@@ -30,11 +30,7 @@ import '../widget/loading_state_indicator.dart';
 
 ColorizationService colorizationService = ColorizationService();
 
-/// DeOldify 上色服务
-///
-/// 通过调用外部 Python 脚本（colorize.py + onnxruntime）对已下载的画廊/档案图片进行批量上色。
-/// 采用 LocalConfig 键值表持久化上色状态，避免 Drift 代码生成。
-/// 仅桌面端（Windows/macOS/Linux）可用。
+/// 上色服务
 class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch implements JHLifeCircleBean {
   static const String downloadId = 'colorizationDownloadId';
   static const String pythonDownloadId = 'pythonDownloadId';
@@ -195,7 +191,7 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
     toast('success'.tr);
   }
 
-  /// 下载 DeOldify ONNX 模型文件
+  /// 下载上色 ONNX 模型文件
   Future<void> downloadModelFile(ColorizationModelType model) async {
     downloadProgress = '0%';
     downloadState = LoadingState.loading;
@@ -371,11 +367,11 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
     try {
       ProcessResult result = await Process.run(
         pythonPath,
-        ['-c', 'import onnxruntime, numpy, PIL; print("ok")'],
+        ['-c', 'import onnxruntime, numpy, cv2, PIL; print("ok")'],
         runInShell: true,
       );
       if (result.exitCode != 0 || (result.stdout as String).trim() != 'ok') {
-        return 'Python 依赖缺失，请在终端运行：\n$pythonPath -m pip install onnxruntime numpy Pillow';
+        return 'Python 依赖缺失，请在终端运行：\n$pythonPath -m pip install onnxruntime-gpu numpy opencv-python Pillow';
       }
     } catch (e) {
       return '无法调用 Python ($pythonPath)，请检查是否已安装 Python 3.8+ 并添加到系统 PATH';
@@ -384,7 +380,7 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
     // 3. 检查模型文件
     String? modelDir = colorizationSetting.modelDirectoryPath.value;
     if (modelDir == null) {
-      return '未设置 DeOldify 模型目录，请先下载模型';
+      return '未设置上色模型目录，请先下载模型';
     }
     String modelPath = join(modelDir, colorizationSetting.model.value.fileName);
     if (!await File(modelPath).exists()) {
@@ -415,7 +411,6 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
     }
 
     for (int i = 0; i < rawImages.length; i++) {
-      /// cancelled
       if (get(gid, type) == null) {
         return;
       }
@@ -540,7 +535,8 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
       '-i $inputRelativePath '
       '-o $outputRelativePath '
       '-m "$modelPath" '
-      '-r ${colorizationSetting.renderFactor.value}',
+      '--type ${colorizationSetting.model.value.scriptType} '
+      '--device ${colorizationSetting.useGPU.value ? 'cuda' : 'cpu'}',
     );
 
     return Process.start(
@@ -553,8 +549,10 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
         outputRelativePath,
         '-m',
         modelPath,
-        '-r',
-        colorizationSetting.renderFactor.value.toString(),
+        '--type',
+        colorizationSetting.model.value.scriptType,
+        '--device',
+        colorizationSetting.useGPU.value ? 'cuda' : 'cpu',
       ],
       workingDirectory: pathService.getVisibleDir().path,
       runInShell: true,

@@ -24,11 +24,7 @@ class SettingColorizationPage extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.help),
-            onPressed: () => launchUrlString(
-              preferenceSetting.locale.value.languageCode == 'zh'
-                  ? 'https://github.com/ColorfulSoft/DeOldify.NET'
-                  : 'https://github.com/ColorfulSoft/DeOldify.NET',
-            ),
+            onPressed: () => launchUrlString('https://github.com/Kiastr/JhentaiSR/wiki/Colorization-Guide'),
           )
         ],
       ),
@@ -41,6 +37,7 @@ class SettingColorizationPage extends StatelessWidget {
             _buildDownloadPythonEnv(),
             _buildModelDirectoryPath(),
             _buildModelType(),
+            _buildGPUConfig(),
             _buildRenderFactor(),
           ],
         ).withListTileTheme(context),
@@ -176,6 +173,17 @@ class SettingColorizationPage extends StatelessWidget {
                 .toList(),
           )
         ],
+      ),
+    );
+  }
+
+  Widget _buildGPUConfig() {
+    return ListTile(
+      title: const Text('GPU 加速'),
+      subtitle: const Text('使用 CUDA 进行推理 (需安装 onnxruntime-gpu)'),
+      trailing: Switch(
+        value: colorizationSetting.useGPU.value,
+        onChanged: (v) => colorizationSetting.saveUseGPU(v),
       ),
     );
   }

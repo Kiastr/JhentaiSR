@@ -8,10 +8,7 @@ import '../service/jh_service.dart';
 
 ColorizationSetting colorizationSetting = ColorizationSetting();
 
-/// DeOldify 上色设置
-///
-/// 基于 DeOldify ONNX 模型，通过 Python + onnxruntime 进行推理。
-/// 支持 Artistic（色彩鲜艳）和 Stable（更自然稳定）两种模型。
+/// 上色设置
 class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLifeCircleBean {
   static const String pythonEnvDownloadUrl = 'https://github.com/Kiastr/JhentaiSR/releases/download/v8.0.12/python_env.zip';
 
@@ -24,9 +21,11 @@ class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLi
   /// 当前选择的模型类型
   Rx<ColorizationModelType> model = Rx<ColorizationModelType>(ColorizationModelType.Artistic);
 
-  /// 渲染因子（render factor），控制模型内部处理分辨率，越大越清晰但越慢
-  /// DeOldify 模型以 renderFactor * 2 的分辨率进行推理，默认 19（即 38px？实际 ONNX 模型固定 256x256，此值保留以备扩展）
+  /// 渲染因子（render factor），控制模型内部处理分辨率
   RxInt renderFactor = 19.obs;
+
+  /// 是否使用 GPU 加速
+  RxBool useGPU = true.obs;
 
   @override
   ConfigEnum get configEnum => ConfigEnum.colorizationSetting;
@@ -38,7 +37,8 @@ class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLi
     pythonPath.value = map['pythonPath'];
     modelDirectoryPath.value = map['modelDirectoryPath'];
     model.value = map['model'] == null ? ColorizationModelType.Artistic : ColorizationModelType.values[map['model']];
-    renderFactor.value = map['renderFactor'] ?? renderFactor.value;
+    renderFactor.value = map['renderFactor'] ?? 19;
+    useGPU.value = map['useGPU'] ?? true;
   }
 
   @override
@@ -48,6 +48,7 @@ class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLi
       'modelDirectoryPath': modelDirectoryPath.value,
       'model': model.value.index,
       'renderFactor': renderFactor.value,
+      'useGPU': useGPU.value,
     });
   }
 
@@ -80,23 +81,39 @@ class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLi
     this.renderFactor.value = renderFactor;
     await saveBeanConfig();
   }
+
+  Future<void> saveUseGPU(bool useGPU) async {
+    log.debug('saveUseGPU:$useGPU');
+    this.useGPU.value = useGPU;
+    await saveBeanConfig();
+  }
 }
 
-/// DeOldify 模型类型
+/// 上色模型类型
 enum ColorizationModelType {
   Artistic(
-    'Artistic',
+    'DeOldify Artistic',
     'deoldify_artistic.onnx',
     'https://github.com/instant-high/deoldify-onnx/releases/download/deoldify-onnx/deoldify.onnx',
     '色彩鲜艳、细节丰富，但偶有瑕疵',
     'Vivid colors and rich details, occasional artifacts',
+    'deoldify',
   ),
   Stable(
-    'Stable',
+    'DeOldify Stable',
     'deoldify_stable.onnx',
     'https://huggingface.co/Jonny001/deepfake/resolve/main/deoldify_stable.onnx',
     '更自然稳定，人像/风景效果更好',
     'More natural and stable, better for portraits/landscapes',
+    'deoldify',
+  ),
+  DDColorTiny(
+    'DDColor Tiny',
+    'ddcolor_tiny.onnx',
+    'https://huggingface.co/facefusion/models-3.0.0/resolve/main/ddcolor.onnx',
+    'DDColor Tiny 版本，速度快，效果好',
+    'DDColor Tiny version, fast and good quality',
+    'ddcolor',
   );
 
   const ColorizationModelType(
@@ -105,6 +122,7 @@ enum ColorizationModelType {
     this.downloadUrl,
     this.descriptionZh,
     this.descriptionEn,
+    this.scriptType,
   );
 
   final String displayName;
@@ -117,4 +135,6 @@ enum ColorizationModelType {
   final String descriptionZh;
 
   final String descriptionEn;
+
+  final String scriptType;
 }
