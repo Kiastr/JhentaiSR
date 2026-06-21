@@ -24,6 +24,7 @@ import 'jh_service.dart';
 import 'log.dart';
 import 'path_service.dart';
 import 'super_resolution_service.dart' show SuperResolutionType;
+import '../utils/archive_util.dart';
 import '../utils/eh_executor.dart';
 import '../utils/toast_util.dart';
 import '../widget/loading_state_indicator.dart';

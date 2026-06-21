@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:jhentai/src/config/ui_config.dart';
 import 'package:jhentai/src/extension/widget_extension.dart';
 import 'package:jhentai/src/setting/preference_setting.dart';
 import 'package:jhentai/src/utils/toast_util.dart';
@@ -36,7 +37,7 @@ class SettingColorizationPage extends StatelessWidget {
         () => ListView(
           padding: const EdgeInsets.only(top: 16),
           children: [
-            _buildInstruction(),
+            _buildInstruction(context),
             _buildPythonPath(),
             _buildDownloadPythonEnv(),
             _buildModelDirectoryPath(),
@@ -48,7 +49,7 @@ class SettingColorizationPage extends StatelessWidget {
     );
   }
 
-  Widget _buildInstruction() {
+  Widget _buildInstruction(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
       child: Text(
