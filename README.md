@@ -4,11 +4,12 @@ English | [简体中文](https://github.com/jiangtian616/JHenTai/blob/master/REA
 
 [Q&A](https://github.com/jiangtian616/JHenTai/wiki/Common-Questions)
 
-[Click to open Python environment for coloring ](./上色功能所需环境/)
 
 ## Description
 
 A manga app for E-Hentai, supporting Android & iOS & Windows & MacOS & Linux.
+
+Added AI coloring and AI super-resolution capabilities
 
 Still in development stage, welcome to submit issues or feature requests.
 
