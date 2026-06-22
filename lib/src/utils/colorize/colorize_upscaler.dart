@@ -33,6 +33,15 @@ class ColorizeParams {
 /// 上色模型类型
 enum ColorizeModelType { ddcolor, deoldify }
 
+/// ONNX Session 缓存（避免每次重新加载模型）
+class _OrtSessionCache {
+  final OrtSession session;
+  final String modelPath;
+  _OrtSessionCache(this.session, this.modelPath);
+}
+
+final Map<String, _OrtSessionCache> _sessionCache = {};
+
 /// 尝试用 image 包解码，如果失败则尝试用 dart:ui 解码（支持 WebP）
 Future<img.Image?> _decodeImage(Uint8List bytes) async {
   img.Image? result = img.decodeImage(bytes);
@@ -78,6 +87,44 @@ void _ensureOrtEnvInitialized() {
   }
 }
 
+/// 获取或创建 ONNX Session（带缓存）
+Future<OrtSession> _getOrCreateSession(
+  String modelPath,
+  int numThreads,
+) async {
+  final cacheKey = '$modelPath:$numThreads';
+  final cached = _sessionCache[cacheKey];
+  if (cached != null) {
+    return cached.session;
+  }
+
+  final sessionOptions = OrtSessionOptions();
+  try {
+    sessionOptions.setIntraOpNumThreads(numThreads);
+    sessionOptions.setSessionExecutionMode(OrtSessionExecutionMode.ortParallel);
+    sessionOptions.setSessionGraphOptimizationLevel(GraphOptimizationLevel.ortEnableAll);
+  } catch (e) {
+    debugPrint('SessionOptions config warning: $e');
+  }
+
+  final Uint8List modelBytes = await File(modelPath).readAsBytes();
+  final session = OrtSession.fromBuffer(modelBytes, sessionOptions);
+  _sessionCache[cacheKey] = _OrtSessionCache(session, modelPath);
+  return session;
+}
+
+/// 释放所有缓存的 session
+void releaseAllSessions() {
+  for (final cache in _sessionCache.values) {
+    try {
+      cache.session.release();
+    } catch (e) {
+      debugPrint('Session release error: $e');
+    }
+  }
+  _sessionCache.clear();
+}
+
 /// 图像上色引擎（Dart 原生，基于 ONNX Runtime + image 包）
 ///
 /// 移植自 colorize.py，支持 DDColor 和 DeOldify 两种模型
@@ -98,8 +145,8 @@ class ColorizeUpscaler {
       }
       debugPrint('DDColor: Decoded image ${decodedImage.width}x${decodedImage.height}');
 
-      // 预缩放: 如果原图过大，先缩小到长边 <= 1280
-      const int maxSide = 1280;
+      // 预缩放: 如果原图过大，先缩小到长边 <= 1024（更激进以减少后处理耗时）
+      const int maxSide = 1024;
       img.Image srcImage = decodedImage;
       if (decodedImage.width > maxSide || decodedImage.height > maxSide) {
         final double scale = maxSide / (decodedImage.width > decodedImage.height ? decodedImage.width : decodedImage.height);
@@ -174,21 +221,13 @@ class ColorizeUpscaler {
         }
       }
 
-      // ONNX 推理
-      debugPrint('DDColor: Loading model from ${params.modelPath}');
-      final sessionOptions = OrtSessionOptions();
-      final int numThreads = params.threads ?? 2;
-      try {
-        sessionOptions.setIntraOpNumThreads(numThreads);
-        debugPrint('DDColor: Set threads to $numThreads');
-      } catch (e) {
-        debugPrint('DDColor: Failed to set threads: $e');
-      }
-
-      final Uint8List modelBytes = await File(params.modelPath).readAsBytes();
-      debugPrint('DDColor: Model size ${modelBytes.length} bytes');
-      final session = OrtSession.fromBuffer(modelBytes, sessionOptions);
-      debugPrint('DDColor: Session created, input names: ${session.inputNames}');
+      // ONNX 推理 - 使用缓存的 session
+      debugPrint('DDColor: Getting session for ${params.modelPath}');
+      final session = await _getOrCreateSession(
+        params.modelPath,
+        params.threads ?? 2,
+      );
+      debugPrint('DDColor: Session input names: ${session.inputNames}');
 
       final String inputName = params.inputName ?? session.inputNames[0];
       final inputOrt = OrtValueTensor.createTensorWithDataList(
@@ -205,15 +244,14 @@ class ColorizeUpscaler {
         debugPrint('DDColor: runAsync returned null');
         inputOrt.release();
         runOptions.release();
-        session.release();
         return false;
       }
 
       final outputs = await result.timeout(
-        const Duration(seconds: 30),
+        const Duration(seconds: 60),
         onTimeout: () {
-          debugPrint('DDColor: Inference timeout after 30 seconds');
-          throw TimeoutException('ONNX推理超时(30秒)');
+          debugPrint('DDColor: Inference timeout after 60 seconds');
+          throw TimeoutException('ONNX推理超时(60秒)');
         },
       );
       debugPrint('DDColor: Inference completed');
@@ -223,14 +261,16 @@ class ColorizeUpscaler {
         debugPrint('DDColor: output is null');
         inputOrt.release();
         runOptions.release();
-        session.release();
         return false;
       }
+
+      // 让出主线程，避免阻塞
+      await Future<void>.delayed(Duration.zero);
 
       final dynamic outputValue = outputOrt.value;
       inputOrt.release();
       runOptions.release();
-      session.release();
+      outputOrt.release();
 
       if (outputValue == null) {
         debugPrint('DDColor: output value is null');
@@ -257,11 +297,17 @@ class ColorizeUpscaler {
         }
       }
 
+      // 让出主线程
+      await Future<void>.delayed(Duration.zero);
+
       // resize ab 到原图大小
       final Float32List resizedA = Float32List(origPixels);
       final Float32List resizedB = Float32List(origPixels);
       _resizePlanarBilinear(abA, outW, outH, resizedA, origWidth, origHeight);
       _resizePlanarBilinear(abB, outW, outH, resizedB, origWidth, origHeight);
+
+      // 让出主线程
+      await Future<void>.delayed(Duration.zero);
 
       // 合成最终图像
       final img.Image resultImg = img.Image(width: origWidth, height: origHeight, numChannels: 4);
@@ -295,7 +341,7 @@ class ColorizeUpscaler {
       debugPrint('DeOldify: Decoded image ${decodedImage.width}x${decodedImage.height}');
 
       // 预缩放
-      const int maxSide = 1280;
+      const int maxSide = 1024;
       img.Image srcImage = decodedImage;
       if (decodedImage.width > maxSide || decodedImage.height > maxSide) {
         final double scale = maxSide / (decodedImage.width > decodedImage.height ? decodedImage.width : decodedImage.height);
@@ -336,21 +382,13 @@ class ColorizeUpscaler {
         }
       }
 
-      // ONNX 推理
-      debugPrint('DeOldify: Loading model from ${params.modelPath}');
-      final sessionOptions = OrtSessionOptions();
-      final int numThreads = params.threads ?? 2;
-      try {
-        sessionOptions.setIntraOpNumThreads(numThreads);
-        debugPrint('DeOldify: Set threads to $numThreads');
-      } catch (e) {
-        debugPrint('DeOldify: Failed to set threads: $e');
-      }
-
-      final Uint8List modelBytes = await File(params.modelPath).readAsBytes();
-      debugPrint('DeOldify: Model size ${modelBytes.length} bytes');
-      final session = OrtSession.fromBuffer(modelBytes, sessionOptions);
-      debugPrint('DeOldify: Session created, input names: ${session.inputNames}');
+      // ONNX 推理 - 使用缓存的 session
+      debugPrint('DeOldify: Getting session for ${params.modelPath}');
+      final session = await _getOrCreateSession(
+        params.modelPath,
+        params.threads ?? 2,
+      );
+      debugPrint('DeOldify: Session input names: ${session.inputNames}');
 
       final String inputName = params.inputName ?? session.inputNames[0];
       final inputOrt = OrtValueTensor.createTensorWithDataList(
@@ -367,15 +405,14 @@ class ColorizeUpscaler {
         debugPrint('DeOldify: runAsync returned null');
         inputOrt.release();
         runOptions.release();
-        session.release();
         return false;
       }
 
       final outputs = await result.timeout(
-        const Duration(seconds: 30),
+        const Duration(seconds: 60),
         onTimeout: () {
-          debugPrint('DeOldify: Inference timeout after 30 seconds');
-          throw TimeoutException('ONNX推理超时(30秒)');
+          debugPrint('DeOldify: Inference timeout after 60 seconds');
+          throw TimeoutException('ONNX推理超时(60秒)');
         },
       );
       debugPrint('DeOldify: Inference completed');
@@ -385,14 +422,16 @@ class ColorizeUpscaler {
         debugPrint('DeOldify: output is null');
         inputOrt.release();
         runOptions.release();
-        session.release();
         return false;
       }
+
+      // 让出主线程
+      await Future<void>.delayed(Duration.zero);
 
       final dynamic outputValue = outputOrt.value;
       inputOrt.release();
       runOptions.release();
-      session.release();
+      outputOrt.release();
 
       if (outputValue == null) {
         debugPrint('DeOldify: output value is null');
@@ -420,6 +459,9 @@ class ColorizeUpscaler {
         }
       }
 
+      // 让出主线程
+      await Future<void>.delayed(Duration.zero);
+
       // resize 回原图
       final img.Image colorizedFull = img.copyResize(
         colorized256,
@@ -427,7 +469,6 @@ class ColorizeUpscaler {
         height: origHeight,
         interpolation: img.Interpolation.linear,
       );
-      final Uint8List cfBytes = colorizedFull.buffer.asUint8List();
 
       // 高斯模糊
       final img.Image colorizedBlurred = img.gaussianBlur(colorizedFull, radius: 6);
