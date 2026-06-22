@@ -9,13 +9,13 @@ import 'package:onnxruntime_v2/onnxruntime_v2.dart';
 import 'lab_color.dart';
 
 /// 尝试用 image 包解码，如果失败则尝试用 dart:ui 解码（支持 WebP）
-img.Image? _decodeImage(Uint8List bytes) {
+Future<img.Image?> _decodeImage(Uint8List bytes) async {
   img.Image? result = img.decodeImage(bytes);
   if (result != null) return result;
 
   try {
-    ui.Image decoded = ui.decodeImageFromListSync(bytes);
-    ByteData? byteData = decoded.toByteData(format: ui.ImageByteFormat.rawRgba);
+    ui.Image decoded = await ui.decodeImageFromList(bytes);
+    ByteData? byteData = await decoded.toByteData(format: ui.ImageByteFormat.rawRgba);
     if (byteData != null) {
       Uint8List rgbaBytes = byteData.buffer.asUint8List();
       result = img.Image.fromBytes(
@@ -93,7 +93,7 @@ class ColorizeUpscaler {
 
       // ============== 读取图像 ==============
       final Uint8List inputBytes = await File(inputPath).readAsBytes();
-      final img.Image? srcImage = _decodeImage(inputBytes);
+      final img.Image? srcImage = await _decodeImage(inputBytes);
       if (srcImage == null) return false;
 
       final int origWidth = srcImage.width;
@@ -223,10 +223,10 @@ class ColorizeUpscaler {
       final Uint8List cfBytes = colorizedFull.buffer.asUint8List();
 
       // ============== 后处理 3: 高斯模糊 ==============
-      // image v4: gaussianBlur(src, radius: int)
+      // OpenCV: GaussianBlur(src, (13,13), 0) → sigma = 0.3*((ksize-1)*0.5 - 1) + 0.8 = 2.3
       final img.Image colorizedBlurred = img.gaussianBlur(
         colorizedFull,
-        radius: 2, // int 类型 (原 radius 2.3 → 近似取 2)
+        sigma: 2.3,
       );
       final Uint8List cbBytes = colorizedBlurred.buffer.asUint8List();
 
@@ -300,7 +300,7 @@ class ColorizeUpscaler {
       _ensureOrtEnvInitialized();
 
       final Uint8List inputBytes = await File(inputPath).readAsBytes();
-      final img.Image? srcImage = _decodeImage(inputBytes);
+      final img.Image? srcImage = await _decodeImage(inputBytes);
       if (srcImage == null) return false;
 
       final int origWidth = srcImage.width;
