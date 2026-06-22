@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -8,15 +9,13 @@ import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:onnxruntime_v2/onnxruntime_v2.dart';
 
-import 'lab_color.dart';
-
-/// 上色任务参数
+/// 上色任务参数（仅含可跨 Isolate 传递的原始类型）
 class ColorizeParams {
   final String inputPath;
   final String outputPath;
   final String modelPath;
   final ColorizeModelType modelType;
-  final int? threads;
+  final int threads;
   final String? inputName;
   final String? outputName;
 
@@ -25,598 +24,432 @@ class ColorizeParams {
     required this.outputPath,
     required this.modelPath,
     required this.modelType,
-    this.threads,
+    int? threads,
     this.inputName,
     this.outputName,
-  });
+  }) : threads = threads ?? 2;
+
+  Map<String, dynamic> toJson() => {
+        'inputPath': inputPath,
+        'outputPath': outputPath,
+        'modelPath': modelPath,
+        'modelType': modelType.index,
+        'threads': threads,
+        'inputName': inputName,
+        'outputName': outputName,
+      };
+
+  factory ColorizeParams.fromJson(Map<String, dynamic> json) => ColorizeParams(
+        inputPath: json['inputPath'] as String,
+        outputPath: json['outputPath'] as String,
+        modelPath: json['modelPath'] as String,
+        modelType: ColorizeModelType.values[json['modelType'] as int],
+        threads: json['threads'] as int,
+        inputName: json['inputName'] as String?,
+        outputName: json['outputName'] as String?,
+      );
 }
 
-/// 上色模型类型
 enum ColorizeModelType { ddcolor, deoldify }
 
-/// ONNX Session 缓存（避免每次重新加载模型）
-class _OrtSessionCache {
-  final OrtSession session;
-  final String modelPath;
-  _OrtSessionCache(this.session, this.modelPath);
-}
+// ========================================================================
+// Isolate 入口：整个上色流水线在独立 Isolate 中运行，完全不阻塞 UI
+// ========================================================================
 
-final Map<String, _OrtSessionCache> _sessionCache = {};
-bool _providersLogged = false;
-
-/// 尝试用 image 包解码，如果失败则尝试用 dart:ui 解码（支持 WebP）
-Future<img.Image?> _decodeImage(Uint8List bytes) async {
-  img.Image? result = img.decodeImage(bytes);
-  if (result != null) return result;
+/// 在独立 Isolate 中执行一张图片的上色（图像解码已在主 Isolate 完成）。
+/// message = {'params': Map, 'width': int, 'height': int, 'bytes': Uint8List}
+Future<bool> _colorizeInIsolate(Map<String, dynamic> message) async {
+  final ColorizeParams params = ColorizeParams.fromJson(message['params'] as Map<String, dynamic>);
+  final int width = message['width'] as int;
+  final int height = message['height'] as int;
+  final Uint8List rgbaBytes = message['bytes'] as Uint8List;
 
   try {
-    final codec = await ui.instantiateImageCodec(bytes);
-    final frameInfo = await codec.getNextFrame();
-    final ui.Image decoded = frameInfo.image;
-    final ByteData? byteData = await decoded.toByteData(format: ui.ImageByteFormat.rawRgba);
-    if (byteData != null) {
-      Uint8List rgbaBytes = byteData.buffer.asUint8List();
-      result = img.Image.fromBytes(
-        width: decoded.width,
-        height: decoded.height,
-        bytes: rgbaBytes.buffer,
-        bytesOffset: rgbaBytes.offsetInBytes,
-        numChannels: 4,
+    // 1. 构造解码后的 img.Image（纯 Dart，不依赖 dart:ui）
+    final img.Image decoded = img.Image.fromBytes(
+      width: width,
+      height: height,
+      bytes: rgbaBytes.buffer,
+      bytesOffset: rgbaBytes.offsetInBytes,
+      numChannels: 4,
+    );
+
+    // 2. 预缩放：限制长边 <= 1024，避免 OOM 和推理过慢
+    const int maxSide = 1024;
+    img.Image src = decoded;
+    if (decoded.width > maxSide || decoded.height > maxSide) {
+      final double scale = maxSide /
+          (decoded.width > decoded.height ? decoded.width : decoded.height);
+      src = img.copyResize(
+        decoded,
+        width: (decoded.width * scale).round(),
+        height: (decoded.height * scale).round(),
+        interpolation: img.Interpolation.linear,
       );
     }
-    decoded.dispose();
+
+    final int origWidth = src.width;
+    final int origHeight = src.height;
+    final Uint8List srcBytes = src.buffer.asUint8List();
+
+    // 3. 缩放到模型输入尺寸（256）
+    const int modelSize = 256;
+    final img.Image resized = img.copyResize(
+      src,
+      width: modelSize,
+      height: modelSize,
+      interpolation: img.Interpolation.linear,
+    );
+    final Uint8List resizedBytes = resized.buffer.asUint8List();
+
+    // 4. 构造灰度三通道 NCHW float32 输入
+    final Float32List nchwInput = Float32List(1 * 3 * modelSize * modelSize);
+    for (int i = 0; i < modelSize * modelSize; i++) {
+      final double gray = resizedBytes[i * 4].toDouble();
+      nchwInput[i] = gray;
+      nchwInput[modelSize * modelSize + i] = gray;
+      nchwInput[2 * modelSize * modelSize + i] = gray;
+    }
+
+    // 5. ONNX 推理（此 isolate 内完成，不跨 Isolate 传递任何 Ort* 对象）
+    final Float32List outputFlat;
+    OrtSession? session;
+    OrtValueTensor? inputOrt;
+    OrtRunOptions? runOptions;
+
+    try {
+      OrtEnv.instance.init();
+
+      final sessionOptions = OrtSessionOptions();
+      try {
+        sessionOptions.setIntraOpNumThreads(params.threads);
+        sessionOptions.setSessionExecutionMode(OrtSessionExecutionMode.ortParallel);
+        sessionOptions.setSessionGraphOptimizationLevel(GraphOptimizationLevel.ortEnableAll);
+
+        // 启用 NNAPI / CoreML / XNNPACK 等硬件加速
+        try {
+          sessionOptions.appendDefaultProviders();
+        } catch (_) {
+          // 某些平台可能不支持，忽略即可
+        }
+      } catch (_) {
+        // 即使 options 设置失败，也继续尝试推理
+      }
+
+      final Uint8List modelBytes = await File(params.modelPath).readAsBytes();
+      session = OrtSession.fromBuffer(modelBytes, sessionOptions);
+
+      final String inputName = params.inputName ?? session.inputNames[0];
+      inputOrt = OrtValueTensor.createTensorWithDataList(
+        nchwInput.toList(growable: false),
+        [1, 3, modelSize, modelSize],
+      );
+
+      runOptions = OrtRunOptions();
+      final result = session.runAsync(runOptions, {inputName: inputOrt});
+
+      final dynamic outputs;
+      if (result is Future) {
+        outputs = await result.timeout(
+          const Duration(seconds: 120),
+          onTimeout: () => throw TimeoutException('ONNX inference timeout (120s)'),
+        );
+      } else {
+        outputs = result;
+      }
+
+      final OrtValue? outputOrt = _extractFirstOutput(outputs);
+      if (outputOrt == null) {
+        debugPrint('colorizeInIsolate: model output is null');
+        return false;
+      }
+
+      // 提取数值——FFI，必须在同一 Isolate 中读取
+      final dynamic rawValue = outputOrt.value;
+      try {
+        outputOrt.release();
+      } catch (_) {}
+
+      if (rawValue == null) {
+        debugPrint('colorizeInIsolate: model output.value is null');
+        return false;
+      }
+
+      // 将嵌套 List/double 展平为 Float32List
+      outputFlat = _flattenToFloat32List(rawValue);
+    } finally {
+      // 推理完成后立刻释放所有 ONNX 资源，防止 FFI 句柄泄漏
+      try {
+        inputOrt?.release();
+      } catch (_) {}
+      try {
+        runOptions?.release();
+      } catch (_) {}
+      try {
+        session?.release();
+      } catch (_) {}
+    }
+
+    // 6. 后处理 + 保存图像
+    final Uint8List pngBytes;
+    if (params.modelType == ColorizeModelType.ddcolor) {
+      pngBytes = img.encodePng(_ddcolorPostProcessImage(
+        outputFlat,
+        srcBytes,
+        origWidth,
+        origHeight,
+      ));
+    } else {
+      pngBytes = img.encodePng(_deoldifyPostProcessImage(
+        outputFlat,
+        srcBytes,
+        origWidth,
+        origHeight,
+        modelSize,
+      ));
+    }
+
+    await File(params.outputPath).writeAsBytes(pngBytes);
+    return true;
+  } catch (e, st) {
+    debugPrint('colorizeInIsolate failed: $e\n$st');
+    return false;
+  }
+}
+
+// ========================================================================
+// 对外 API
+// ========================================================================
+
+class ColorizeUpscaler {
+  /// 执行 DDColor 上色（在独立 Isolate 中运行，不阻塞 UI）。
+  static Future<bool> colorizeDDColor(ColorizeParams params) async {
+    assert(params.modelType == ColorizeModelType.ddcolor);
+    return await _runColorizeInIsolate(params);
+  }
+
+  /// 执行 DeOldify 上色（在独立 Isolate 中运行，不阻塞 UI）。
+  static Future<bool> colorizeDeOldify(ColorizeParams params) async {
+    assert(params.modelType == ColorizeModelType.deoldify);
+    return await _runColorizeInIsolate(params);
+  }
+
+  /// 统一入口：在主 Isolate 用 dart:ui 解码图像（支持 webp），
+  /// 然后把 RGBA bytes 传到后台 Isolate 完成 ONNX 推理与后处理。
+  ///
+  /// 注意：dart:ui 的 API 在后台 Isolate 不可用，必须在主 Isolate 调用。
+  static Future<bool> _runColorizeInIsolate(ColorizeParams params) async {
+    try {
+      // 1. 主 Isolate：读取 + 解码（dart:ui 仅在此可用）
+      final Uint8List inputBytes = await File(params.inputPath).readAsBytes();
+      final img.Image? decoded = await _decodeImage(inputBytes);
+      if (decoded == null) {
+        debugPrint('colorize: failed to decode image ${params.inputPath}');
+        return false;
+      }
+      final Uint8List rgbaBytes = decoded.buffer.asUint8List();
+
+      // 2. 后台 Isolate：所有耗时逻辑（缩放、ONNX 推理、LAB 合成）
+      final message = <String, dynamic>{
+        'params': params.toJson(),
+        'width': decoded.width,
+        'height': decoded.height,
+        'bytes': rgbaBytes,
+      };
+
+      return await Isolate.run(
+        () => _colorizeInIsolate(message),
+        debugName: 'colorize_${params.modelType.name}',
+      );
+    } catch (e, st) {
+      debugPrint('Isolate.run failed: $e\n$st');
+      return false;
+    }
+  }
+}
+
+/// 旧 API 兼容（仅释放 session 缓存——Isolate 模式下其实无缓存，保留空实现以避免编译报错）
+void releaseAllSessions() {}
+
+// ========================================================================
+// 工具函数（纯 Dart，无 FFI，跨 Isolate 安全）
+// ========================================================================
+
+Future<img.Image?> _decodeImage(Uint8List bytes) async {
+  // 优先用 image 包（纯 Dart，速度快）
+  final img.Image? fromPackage = img.decodeImage(bytes);
+  if (fromPackage != null) return fromPackage;
+
+  // 否则用 dart:ui 解码（支持 webp / heic 等格式）
+  try {
+    final ui.Codec codec = await ui.instantiateImageCodec(bytes);
+    final ui.FrameInfo frame = await codec.getNextFrame();
+    final ui.Image image = frame.image;
+
+    final ByteData? byteData = await image.toByteData(
+      format: ui.ImageByteFormat.rawRgba,
+    );
+    if (byteData == null) {
+      image.dispose();
+      codec.dispose();
+      return null;
+    }
+
+    final Uint8List rgba = byteData.buffer.asUint8List(
+      byteData.offsetInBytes,
+      byteData.lengthInBytes,
+    );
+    final img.Image result = img.Image.fromBytes(
+      width: image.width,
+      height: image.height,
+      bytes: rgba.buffer,
+      bytesOffset: rgba.offsetInBytes,
+      numChannels: 4,
+    );
+
+    image.dispose();
     codec.dispose();
     return result;
   } catch (e) {
-    debugPrint('Failed to decode image with dart:ui: $e');
+    debugPrint('dart:ui decode failed: $e');
     return null;
   }
 }
 
-/// ONNX Runtime 环境初始化标志
-bool _ortEnvInitialized = false;
-
-/// 确保 ONNX Runtime 环境已初始化
-void _ensureOrtEnvInitialized() {
-  if (!_ortEnvInitialized) {
-    try {
-      OrtEnv.instance.init();
-      _ortEnvInitialized = true;
-    } catch (e) {
-      debugPrint('ONNX Env init error (may already initialized): $e');
-      _ortEnvInitialized = true;
-    }
-  }
-}
-
-/// 获取或创建 ONNX Session（带缓存）
-Future<OrtSession> _getOrCreateSession(
-  String modelPath,
-  int numThreads,
-) async {
-  final cacheKey = '$modelPath:$numThreads';
-  final cached = _sessionCache[cacheKey];
-  if (cached != null) {
-    return cached.session;
-  }
-
-  final sessionOptions = OrtSessionOptions();
-  try {
-    sessionOptions.setIntraOpNumThreads(numThreads);
-    // 关键：启用ortParallel模式以利用多线程
-    sessionOptions.setSessionExecutionMode(OrtSessionExecutionMode.ortParallel);
-    // 关键：启用所有图优化
-    sessionOptions.setSessionGraphOptimizationLevel(GraphOptimizationLevel.ortEnableAll);
-
-    // 尝试启用硬件加速 (NNAPI for Android, CoreML for iOS)
-    try {
-      sessionOptions.appendDefaultProviders();
-      debugPrint('ONNX: Default providers appended (NNAPI/CoreML/XNNPACK)');
-    } catch (e) {
-      debugPrint('ONNX: Failed to append default providers: $e');
-    }
-
-    if (!_providersLogged) {
-      _providersLogged = true;
-      try {
-        final providers = OrtEnv.instance.availableProviders();
-        debugPrint('ONNX available providers: $providers');
-      } catch (e) {
-        debugPrint('ONNX availableProviders error: $e');
-      }
-    }
-  } catch (e) {
-    debugPrint('SessionOptions config warning: $e');
-  }
-
-  final Uint8List modelBytes = await File(modelPath).readAsBytes();
-  final session = OrtSession.fromBuffer(modelBytes, sessionOptions);
-  _sessionCache[cacheKey] = _OrtSessionCache(session, modelPath);
-  return session;
-}
-
-/// 释放所有缓存的 session
-void releaseAllSessions() {
-  for (final cache in _sessionCache.values) {
-    try {
-      cache.session.release();
-    } catch (e) {
-      debugPrint('Session release error: $e');
-    }
-  }
-  _sessionCache.clear();
-}
-
-/// 让出主线程（让UI有机会刷新）
-Future<void> _yieldToUI() async {
-  await Future<void>.delayed(Duration.zero);
-}
-
-/// 图像上色引擎（Dart 原生，基于 ONNX Runtime + image 包）
-///
-/// 移植自 colorize.py，支持 DDColor 和 DeOldify 两种模型
-class ColorizeUpscaler {
-  /// 执行 DDColor 上色
-  static Future<bool> colorizeDDColor(ColorizeParams params) async {
-    try {
-      _ensureOrtEnvInitialized();
-
-      debugPrint('DDColor: Reading image from ${params.inputPath}');
-      final Uint8List inputBytes = await File(params.inputPath).readAsBytes();
-      debugPrint('DDColor: Image size ${inputBytes.length} bytes');
-
-      final img.Image? decodedImage = await _decodeImage(inputBytes);
-      if (decodedImage == null) {
-        debugPrint('DDColor: Failed to decode image');
-        return false;
-      }
-      debugPrint('DDColor: Decoded image ${decodedImage.width}x${decodedImage.height}');
-
-      await _yieldToUI();
-
-      // 预缩放: 如果原图过大，先缩小到长边 <= 1024
-      const int maxSide = 1024;
-      img.Image srcImage = decodedImage;
-      if (decodedImage.width > maxSide || decodedImage.height > maxSide) {
-        final double scale = maxSide / (decodedImage.width > decodedImage.height ? decodedImage.width : decodedImage.height);
-        final int newW = (decodedImage.width * scale).round();
-        final int newH = (decodedImage.height * scale).round();
-        debugPrint('DDColor: Pre-scaling to ${newW}x${newH}');
-        // 在 isolate 中执行 resize
-        srcImage = await compute(_resizeImage, {
-          'image': decodedImage,
-          'width': newW,
-          'height': newH,
-        });
-      }
-
-      final int origWidth = srcImage.width;
-      final int origHeight = srcImage.height;
-      final int origPixels = origWidth * origHeight;
-      final Uint8List srcBytes = srcImage.buffer.asUint8List();
-
-      const int modelSize = 256;
-      // 在 isolate 中执行模型输入 resize
-      final img.Image resized = await compute(_resizeImage, {
-        'image': srcImage,
-        'width': modelSize,
-        'height': modelSize,
-      });
-      final Uint8List resizedBytes = resized.buffer.asUint8List();
-
-      await _yieldToUI();
-
-      // 直接构造 nchwInput - 不需要 LAB 来回转换
-      // DDColor 期望输入是 LAB 转换后的 RGB 灰度图 (1, 3, 256, 256)
-      // 简单方案: 直接将灰度图作为三通道输入
-      final Float32List nchwInput = Float32List(1 * 3 * modelSize * modelSize);
-
-      // 在 isolate 中构造灰度三通道
-      final Float32List inputData = await compute(_toGrayscaleFloat32NCHW, {
-        'rgbaBytes': resizedBytes,
-        'modelSize': modelSize,
-      });
-      nchwInput.setAll(0, inputData);
-
-      await _yieldToUI();
-
-      // ONNX 推理 - 使用缓存的 session
-      debugPrint('DDColor: Getting session for ${params.modelPath}');
-      final session = await _getOrCreateSession(
-        params.modelPath,
-        params.threads ?? 2,
-      );
-      debugPrint('DDColor: Session input names: ${session.inputNames}');
-
-      final String inputName = params.inputName ?? session.inputNames[0];
-      final inputOrt = OrtValueTensor.createTensorWithDataList(
-        nchwInput.toList(growable: false),
-        [1, 3, modelSize, modelSize],
-      );
-      debugPrint('DDColor: Input tensor created');
-
-      final runOptions = OrtRunOptions();
-      debugPrint('DDColor: Starting inference...');
-
-      final result = session.runAsync(runOptions, {inputName: inputOrt});
-      if (result == null) {
-        debugPrint('DDColor: runAsync returned null');
-        inputOrt.release();
-        runOptions.release();
-        return false;
-      }
-
-      final outputs = await result.timeout(
-        const Duration(seconds: 120),
-        onTimeout: () {
-          debugPrint('DDColor: Inference timeout after 120 seconds');
-          throw TimeoutException('ONNX推理超时(120秒)，可能模型较大或设备性能不足');
-        },
-      );
-      debugPrint('DDColor: Inference completed');
-
-      // 关键：释放输入tensor和runOptions
-      inputOrt.release();
-      runOptions.release();
-
-      final OrtValue? outputOrt = _extractFirstOutput(outputs);
-      if (outputOrt == null) {
-        debugPrint('DDColor: output is null');
-        for (final o in outputs ?? []) {
-          o?.release();
-        }
-        return false;
-      }
-
-      await _yieldToUI();
-
-      // 关键：outputOrt.value 是同步 FFI 复制，对大输出可能耗时
-      // 在主 isolate 上完成（无法放到 compute 中，因为 OrtValue 不能跨 isolate）
-      final dynamic outputValue = outputOrt.value;
-      outputOrt.release();
-
-      if (outputValue == null) {
-        debugPrint('DDColor: output value is null');
-        return false;
-      }
-
-      // 解析输出并 resize - 在 isolate 中完成
-      final Float32List outputFlat = await compute(_parseFloat32List, {
-        'data': outputValue as List<dynamic>,
-      });
-
-      const int outH = 256;
-      const int outW = 256;
-      final int origPixelsValue = origPixels;
-
-      // 在 isolate 中完成 AB resize 和 LAB 合成
-      final Uint8List resultBytes = await compute(_ddcolorPostProcess, {
-        'outputFlat': outputFlat,
-        'srcBytes': srcBytes,
-        'origWidth': origWidth,
-        'origHeight': origHeight,
-        'outW': outW,
-        'outH': outH,
-      });
-
-      await File(params.outputPath).writeAsBytes(resultBytes);
-
-      debugPrint('DDColor: Success, saved to ${params.outputPath}');
-      return true;
-    } catch (e, st) {
-      debugPrint('DDColor colorization failed: $e\n$st');
-      return false;
-    }
-  }
-
-  /// 执行 DeOldify 上色
-  static Future<bool> colorizeDeOldify(ColorizeParams params) async {
-    try {
-      _ensureOrtEnvInitialized();
-
-      debugPrint('DeOldify: Reading image from ${params.inputPath}');
-      final Uint8List inputBytes = await File(params.inputPath).readAsBytes();
-      debugPrint('DeOldify: Image size ${inputBytes.length} bytes');
-
-      final img.Image? decodedImage = await _decodeImage(inputBytes);
-      if (decodedImage == null) {
-        debugPrint('DeOldify: Failed to decode image');
-        return false;
-      }
-      debugPrint('DeOldify: Decoded image ${decodedImage.width}x${decodedImage.height}');
-
-      await _yieldToUI();
-
-      const int maxSide = 1024;
-      img.Image srcImage = decodedImage;
-      if (decodedImage.width > maxSide || decodedImage.height > maxSide) {
-        final double scale = maxSide / (decodedImage.width > decodedImage.height ? decodedImage.width : decodedImage.height);
-        final int newW = (decodedImage.width * scale).round();
-        final int newH = (decodedImage.height * scale).round();
-        debugPrint('DeOldify: Pre-scaling to ${newW}x${newH}');
-        srcImage = await compute(_resizeImage, {
-          'image': decodedImage,
-          'width': newW,
-          'height': newH,
-        });
-      }
-
-      final int origWidth = srcImage.width;
-      final int origHeight = srcImage.height;
-      final Uint8List srcBytes = srcImage.buffer.asUint8List();
-
-      const int modelSize = 256;
-      final img.Image resized = await compute(_resizeImage, {
-        'image': srcImage,
-        'width': modelSize,
-        'height': modelSize,
-      });
-      final Uint8List resizedBytes = resized.buffer.asUint8List();
-
-      await _yieldToUI();
-
-      // 灰度图转 float32 NCHW
-      final Float32List nchwInput = await compute(_toGrayscaleFloat32NCHW, {
-        'rgbaBytes': resizedBytes,
-        'modelSize': modelSize,
-      });
-
-      await _yieldToUI();
-
-      // ONNX 推理
-      debugPrint('DeOldify: Getting session for ${params.modelPath}');
-      final session = await _getOrCreateSession(
-        params.modelPath,
-        params.threads ?? 2,
-      );
-      debugPrint('DeOldify: Session input names: ${session.inputNames}');
-
-      final String inputName = params.inputName ?? session.inputNames[0];
-      final inputOrt = OrtValueTensor.createTensorWithDataList(
-        nchwInput.toList(growable: false),
-        [1, 3, modelSize, modelSize],
-      );
-      debugPrint('DeOldify: Input tensor created');
-
-      final runOptions = OrtRunOptions();
-      debugPrint('DeOldify: Starting inference...');
-
-      final result = session.runAsync(runOptions, {inputName: inputOrt});
-      if (result == null) {
-        debugPrint('DeOldify: runAsync returned null');
-        inputOrt.release();
-        runOptions.release();
-        return false;
-      }
-
-      final outputs = await result.timeout(
-        const Duration(seconds: 120),
-        onTimeout: () {
-          debugPrint('DeOldify: Inference timeout after 120 seconds');
-          throw TimeoutException('ONNX推理超时(120秒)');
-        },
-      );
-      debugPrint('DeOldify: Inference completed');
-
-      inputOrt.release();
-      runOptions.release();
-
-      final OrtValue? outputOrt = _extractFirstOutput(outputs);
-      if (outputOrt == null) {
-        debugPrint('DeOldify: output is null');
-        for (final o in outputs ?? []) {
-          o?.release();
-        }
-        return false;
-      }
-
-      await _yieldToUI();
-
-      final dynamic outputValue = outputOrt.value;
-      outputOrt.release();
-
-      if (outputValue == null) {
-        debugPrint('DeOldify: output value is null');
-        return false;
-      }
-
-      // 后处理 - 在 isolate 中完成
-      final Uint8List resultBytes = await compute(_deoldifyPostProcess, {
-        'outputData': outputValue as List<dynamic>,
-        'srcBytes': srcBytes,
-        'origWidth': origWidth,
-        'origHeight': origHeight,
-        'modelSize': modelSize,
-      });
-
-      await File(params.outputPath).writeAsBytes(resultBytes);
-
-      debugPrint('DeOldify: Success, saved to ${params.outputPath}');
-      return true;
-    } catch (e, st) {
-      debugPrint('DeOldify colorization failed: $e\n$st');
-      return false;
-    }
-  }
-
-  /// 从 runAsync 输出中提取第一个 OrtValue
-  static OrtValue? _extractFirstOutput(dynamic outputs) {
-    if (outputs == null) return null;
-    if (outputs is List) {
-      for (var item in outputs) {
-        if (item != null) return item as OrtValue;
-      }
-      return null;
-    }
-    if (outputs is Map) {
-      for (var v in outputs.values) {
-        if (v != null) return v as OrtValue;
-      }
-      return null;
+OrtValue? _extractFirstOutput(dynamic outputs) {
+  if (outputs == null) return null;
+  if (outputs is List) {
+    for (final item in outputs) {
+      if (item != null) return item as OrtValue;
     }
     return null;
   }
-}
-
-// =================================================================
-// 后台 isolate 工具函数（必须为顶层函数才能在 compute 中使用）
-// =================================================================
-
-/// 在 isolate 中缩放图像
-img.Image _resizeImage(Map<String, dynamic> args) {
-  final img.Image image = args['image'] as img.Image;
-  final int width = args['width'] as int;
-  final int height = args['height'] as int;
-  return img.copyResize(
-    image,
-    width: width,
-    height: height,
-    interpolation: img.Interpolation.linear,
-  );
-}
-
-/// 在 isolate 中将 RGBA 字节转为灰度三通道 NCHW float32
-Float32List _toGrayscaleFloat32NCHW(Map<String, dynamic> args) {
-  final Uint8List rgbaBytes = args['rgbaBytes'] as Uint8List;
-  final int modelSize = args['modelSize'] as int;
-  final int pixelCount = modelSize * modelSize;
-  final Float32List result = Float32List(1 * 3 * pixelCount);
-
-  for (int i = 0; i < pixelCount; i++) {
-    final int gray = rgbaBytes[i * 4];
-    // CHW 格式: 通道在前
-    result[0 * pixelCount + i] = gray.toDouble();
-    result[1 * pixelCount + i] = gray.toDouble();
-    result[2 * pixelCount + i] = gray.toDouble();
+  if (outputs is Map) {
+    for (final v in outputs.values) {
+      if (v != null) return v as OrtValue;
+    }
+    return null;
   }
-  return result;
+  return null;
 }
 
-/// 在 isolate 中将 List<dynamic> 转为 Float32List
-Float32List _parseFloat32List(Map<String, dynamic> args) {
-  final List<dynamic> data = args['data'] as List<dynamic>;
-  final Float32List result = Float32List(data.length);
-  for (int i = 0; i < data.length; i++) {
-    result[i] = (data[i] as num).toDouble();
-  }
-  return result;
-}
-
-/// DDColor 后处理（在 isolate 中执行）
-/// 1. 解析 AB 通道 (1, 2, 256, 256) -> (256, 256, 2)
-/// 2. 提取原图 LAB L 通道
-/// 3. resize AB 到原图尺寸
-/// 4. 合成 LAB -> RGB
-Uint8List _ddcolorPostProcess(Map<String, dynamic> args) {
-  final Float32List outputFlat = args['outputFlat'] as Float32List;
-  final Uint8List srcBytes = args['srcBytes'] as Uint8List;
-  final int origWidth = args['origWidth'] as int;
-  final int origHeight = args['origHeight'] as int;
-  final int outW = args['outW'] as int;
-  final int outH = args['outH'] as int;
-  final int origPixels = origWidth * origHeight;
-
-  // 1. 提取原图 L 通道
-  final Float32List origL = Float32List(origPixels);
-  for (int i = 0; i < origPixels; i++) {
-    // srcBytes 是 RGBA，取 R 作为亮度
-    origL[i] = srcBytes[i * 4] / 255.0;
+/// 把任意嵌套的 List<num>/num 展平为 Float32List
+Float32List _flattenToFloat32List(dynamic value) {
+  final List<double> flat = <double>[];
+  void walk(dynamic x) {
+    if (x is num) {
+      flat.add(x.toDouble());
+    } else if (x is List) {
+      for (final item in x) {
+        walk(item);
+      }
+    } else if (x is Float32List) {
+      flat.addAll(x);
+    } else if (x is Iterable<double>) {
+      flat.addAll(x);
+    } else {
+      // 兜底：尝试 toString + 解析，通常不会到这里
+      final double? parsed = double.tryParse(x.toString());
+      if (parsed != null) flat.add(parsed);
+    }
   }
 
-  // 2. CHW -> HWC: (1, 2, 256, 256) -> 2x(256, 256)
-  final Float32List abA = Float32List(outH * outW);
-  final Float32List abB = Float32List(outH * outW);
+  walk(value);
+  return Float32List.fromList(flat);
+}
+
+// ============ DDColor 后处理 ============
+img.Image _ddcolorPostProcessImage(
+  Float32List outputFlat,
+  Uint8List srcBytes,
+  int origWidth,
+  int origHeight,
+) {
+  const int outH = 256;
+  const int outW = 256;
+
+  // LAB A/B 通道双线性 resize 到原图尺寸
+  final Float32List srcA = Float32List(outH * outW);
+  final Float32List srcB = Float32List(outH * outW);
   for (int i = 0; i < outH * outW; i++) {
-    abA[i] = outputFlat[0 * outH * outW + i];
-    abB[i] = outputFlat[1 * outH * outW + i];
+    srcA[i] = outputFlat[i];
+    srcB[i] = outputFlat[outH * outW + i];
   }
 
-  // 3. resize AB 到原图尺寸 (双线性插值)
-  final Float32List resizedA = _resizePlanarBilinear(abA, outW, outH, origWidth, origHeight);
-  final Float32List resizedB = _resizePlanarBilinear(abB, outW, outH, origWidth, origHeight);
+  final Float32List aChannel = _resizePlanarBilinear(srcA, outW, outH, origWidth, origHeight);
+  final Float32List bChannel = _resizePlanarBilinear(srcB, outW, outH, origWidth, origHeight);
 
-  // 4. LAB -> RGB (简化版: 直接用 L*gray + AB*color)
-  // DDColor 输出 AB 是 [-1, 1] 范围，需要映射到 [-128, 128] 再用 cv2.Lab2BGR
-  final Uint8List result = Uint8List(origPixels * 4);
-  for (int i = 0; i < origPixels; i++) {
-    final double l = origL[i]; // [0, 1]
-    final double a = (resizedA[i] * 128.0).clamp(-128.0, 127.0);
-    final double b = (resizedB[i] * 128.0).clamp(-128.0, 127.0);
+  // 合成：原图 L + 模型 AB -> BGR -> PNG
+  final img.Image result = img.Image(width: origWidth, height: origHeight, numChannels: 4);
+  final Uint8List resultBytes = result.buffer.asUint8List();
 
-    // 简化的 LAB -> RGB (此为近似实现，与原算法略有差异但视觉效果接近)
-    final double lLab = l * 100.0;
-    final List<double> bgr = _labToBgrFast(lLab, a, b);
+  for (int i = 0; i < origWidth * origHeight; i++) {
+    final double l = srcBytes[i * 4] / 255.0; // 用 R 作为亮度近似
+    final double a = (aChannel[i] * 128.0).clamp(-128.0, 127.0);
+    final double b = (bChannel[i] * 128.0).clamp(-128.0, 127.0);
 
-    result[i * 4] = (bgr[2] * 255.0).round().clamp(0, 255);
-    result[i * 4 + 1] = (bgr[1] * 255.0).round().clamp(0, 255);
-    result[i * 4 + 2] = (bgr[0] * 255.0).round().clamp(0, 255);
-    result[i * 4 + 3] = 255;
+    final List<double> bgr = _labToBgrFast(l * 100.0, a, b);
+
+    resultBytes[i * 4] = (bgr[2] * 255.0).round().clamp(0, 255);
+    resultBytes[i * 4 + 1] = (bgr[1] * 255.0).round().clamp(0, 255);
+    resultBytes[i * 4 + 2] = (bgr[0] * 255.0).round().clamp(0, 255);
+    resultBytes[i * 4 + 3] = 255;
   }
+
   return result;
 }
 
-/// DeOldify 后处理（在 isolate 中执行）
-/// 1. CHW -> HWC RGB
-/// 2. resize 到原图尺寸
-/// 3. Gaussian blur
-/// 4. 提取原图 L 通道
-/// 5. 合成 LAB -> RGB
-Uint8List _deoldifyPostProcess(Map<String, dynamic> args) {
-  final List<dynamic> outputData = args['outputData'] as List<dynamic>;
-  final Uint8List srcBytes = args['srcBytes'] as Uint8List;
-  final int origWidth = args['origWidth'] as int;
-  final int origHeight = args['origHeight'] as int;
-  final int modelSize = args['modelSize'] as int;
-
-  // 1. CHW -> HWC RGB
-  final int pixelCount = modelSize * modelSize;
-  final img.Image colorized256 = img.Image(width: modelSize, height: modelSize, numChannels: 4);
-  final Uint8List c256Bytes = colorized256.buffer.asUint8List();
-  for (int i = 0; i < pixelCount; i++) {
-    c256Bytes[i * 4] = (outputData[0 * pixelCount + i] as num).round().clamp(0, 255);
-    c256Bytes[i * 4 + 1] = (outputData[1 * pixelCount + i] as num).round().clamp(0, 255);
-    c256Bytes[i * 4 + 2] = (outputData[2 * pixelCount + i] as num).round().clamp(0, 255);
-    c256Bytes[i * 4 + 3] = 255;
+// ============ DeOldify 后处理 ============
+img.Image _deoldifyPostProcessImage(
+  Float32List outputFlat,
+  Uint8List srcBytes,
+  int origWidth,
+  int origHeight,
+  int modelSize,
+) {
+  // outputFlat 形状应为 [1, 3, modelSize, modelSize]（CHW）
+  final img.Image color256 = img.Image(width: modelSize, height: modelSize, numChannels: 4);
+  final Uint8List c256 = color256.buffer.asUint8List();
+  for (int i = 0; i < modelSize * modelSize; i++) {
+    c256[i * 4] = outputFlat[i].clamp(0.0, 255.0).round();
+    c256[i * 4 + 1] = outputFlat[modelSize * modelSize + i].clamp(0.0, 255.0).round();
+    c256[i * 4 + 2] = outputFlat[2 * modelSize * modelSize + i].clamp(0.0, 255.0).round();
+    c256[i * 4 + 3] = 255;
   }
 
-  // 2. resize 回原图
-  final img.Image colorizedFull = img.copyResize(
-    colorized256,
+  // 放大到原图尺寸 + 高斯模糊（防止噪声）
+  final img.Image colorFull = img.copyResize(
+    color256,
     width: origWidth,
     height: origHeight,
     interpolation: img.Interpolation.linear,
   );
+  final img.Image colorBlurred = img.gaussianBlur(colorFull, radius: 6);
+  final Uint8List cb = colorBlurred.buffer.asUint8List();
 
-  // 3. 高斯模糊
-  final img.Image colorizedBlurred = img.gaussianBlur(colorizedFull, radius: 6);
-  final Uint8List cbBytes = colorizedBlurred.buffer.asUint8List();
+  // 用原图的 L 替换上色图的 L（保留原图亮度）
+  final img.Image result = img.Image(width: origWidth, height: origHeight, numChannels: 4);
+  final Uint8List rb = result.buffer.asUint8List();
 
-  // 4. 提取原图 L (用 R 通道)
-  final int origPixels = origWidth * origHeight;
-  final Uint8List result = Uint8List(origPixels * 4);
-  for (int i = 0; i < origPixels; i++) {
-    final int lVal = srcBytes[i * 4]; // 0-255
+  for (int i = 0; i < origWidth * origHeight; i++) {
+    final double lStd = srcBytes[i * 4] / 255.0; // 原图亮度
 
-    // 上色图的 LAB 通道
-    final double bInput = cbBytes[i * 4 + 2] / 255.0;
-    final double gInput = cbBytes[i * 4 + 1] / 255.0;
-    final double rInput = cbBytes[i * 4] / 255.0;
+    final double bIn = cb[i * 4 + 2] / 255.0;
+    final double gIn = cb[i * 4 + 1] / 255.0;
+    final double rIn = cb[i * 4] / 255.0;
+    final List<double> lab = _bgrToLabFast(bIn, gIn, rIn);
 
-    final List<double> lab = _bgrToLabFast(bInput, gInput, rInput);
-
-    // 用原图的 L 替换上色图的 L
-    final double lStd = lVal * 100.0 / 255.0;
-    final List<double> bgr = _labToBgrFast(lStd, lab[1], lab[2]);
-
-    result[i * 4] = (bgr[2] * 255.0).round().clamp(0, 255);
-    result[i * 4 + 1] = (bgr[1] * 255.0).round().clamp(0, 255);
-    result[i * 4 + 2] = (bgr[0] * 255.0).round().clamp(0, 255);
-    result[i * 4 + 3] = 255;
+    final List<double> bgr = _labToBgrFast(lStd * 100.0, lab[1], lab[2]);
+    rb[i * 4] = (bgr[2] * 255.0).round().clamp(0, 255);
+    rb[i * 4 + 1] = (bgr[1] * 255.0).round().clamp(0, 255);
+    rb[i * 4 + 2] = (bgr[0] * 255.0).round().clamp(0, 255);
+    rb[i * 4 + 3] = 255;
   }
+
   return result;
 }
 
-/// 双线性插值
+// ============ 双线性插值 & LAB 工具 ============
 Float32List _resizePlanarBilinear(
   Float32List src,
   int srcW,
@@ -653,34 +486,28 @@ Float32List _resizePlanarBilinear(
   return dst;
 }
 
-/// 简化的 BGR [0,1] -> LAB
 List<double> _bgrToLabFast(double b, double g, double r) {
-  // sRGB -> linear
-  double lr = r <= 0.04045 ? r / 12.92 : _pow((r + 0.055) / 1.055, 2.4);
-  double lg = g <= 0.04045 ? g / 12.92 : _pow((g + 0.055) / 1.055, 2.4);
-  double lb = b <= 0.04045 ? b / 12.92 : _pow((b + 0.055) / 1.055, 2.4);
+  final double lr = r <= 0.04045 ? r / 12.92 : _pow((r + 0.055) / 1.055, 2.4);
+  final double lg = g <= 0.04045 ? g / 12.92 : _pow((g + 0.055) / 1.055, 2.4);
+  final double lb = b <= 0.04045 ? b / 12.92 : _pow((b + 0.055) / 1.055, 2.4);
 
-  // linear RGB -> XYZ (D65)
   final double x = 0.412453 * lr + 0.357580 * lg + 0.180423 * lb;
   final double y = 0.212671 * lr + 0.715160 * lg + 0.072169 * lb;
   final double z = 0.019334 * lr + 0.119193 * lg + 0.950227 * lb;
 
-  // XYZ -> LAB
   const double xn = 0.95047, yn = 1.0, zn = 1.08883;
   const double epsilon = 216.0 / 24389.0;
   const double kappa = 24389.0 / 27.0;
 
   double f(double t) => t > epsilon ? _pow(t, 1.0 / 3.0) : (kappa * t + 16.0) / 116.0;
-  final double fx = f(x / xn), fy = f(y / yn), fz = f(z / zn);
 
-  return [
-    116.0 * fy - 16.0,
-    500.0 * (fx - fy),
-    200.0 * (fy - fz),
-  ];
+  final double fx = f(x / xn);
+  final double fy = f(y / yn);
+  final double fz = f(z / zn);
+
+  return [116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz)];
 }
 
-/// 简化的 LAB -> BGR [0,1]
 List<double> _labToBgrFast(double l, double a, double b) {
   const double xn = 0.95047, yn = 1.0, zn = 1.08883;
   const double epsilon = 216.0 / 24389.0;
@@ -699,13 +526,12 @@ List<double> _labToBgrFast(double l, double a, double b) {
   final double y = fInv(fy) * yn;
   final double z = fInv(fz) * zn;
 
-  // XYZ -> linear RGB
-  double lr = (3.240479 * x - 1.537150 * y - 0.498535 * z).clamp(0.0, 1.0);
-  double lg = (-0.969256 * x + 1.875992 * y + 0.041556 * z).clamp(0.0, 1.0);
-  double lb = (0.055648 * x - 0.204043 * y + 1.057311 * z).clamp(0.0, 1.0);
+  final double lr = (3.240479 * x - 1.537150 * y - 0.498535 * z).clamp(0.0, 1.0);
+  final double lg = (-0.969256 * x + 1.875992 * y + 0.041556 * z).clamp(0.0, 1.0);
+  final double lb = (0.055648 * x - 0.204043 * y + 1.057311 * z).clamp(0.0, 1.0);
 
-  // linear -> sRGB
-  double toSrgb(double c) => c <= 0.0031308 ? 12.92 * c : 1.055 * _pow(c, 1.0 / 2.4) - 0.055;
+  double toSrgb(double c) =>
+      c <= 0.0031308 ? 12.92 * c : 1.055 * _pow(c, 1.0 / 2.4) - 0.055;
   return [toSrgb(lb), toSrgb(lg), toSrgb(lr)];
 }
 
