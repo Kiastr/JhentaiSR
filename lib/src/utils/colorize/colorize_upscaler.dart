@@ -1,11 +1,38 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:onnxruntime_v2/onnxruntime_v2.dart';
 
 import 'lab_color.dart';
+
+/// 尝试用 image 包解码，如果失败则尝试用 dart:ui 解码（支持 WebP）
+img.Image? _decodeImage(Uint8List bytes) {
+  img.Image? result = img.decodeImage(bytes);
+  if (result != null) return result;
+
+  try {
+    ui.Image decoded = ui.decodeImageFromListSync(bytes);
+    ByteData? byteData = decoded.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (byteData != null) {
+      Uint8List rgbaBytes = byteData.buffer.asUint8List();
+      result = img.Image.fromBytes(
+        width: decoded.width,
+        height: decoded.height,
+        bytes: rgbaBytes.buffer,
+        bytesOffset: rgbaBytes.offsetInBytes,
+        numChannels: 4,
+      );
+    }
+    decoded.dispose();
+    return result;
+  } catch (e) {
+    debugPrint('Failed to decode image with dart:ui: $e');
+    return null;
+  }
+}
 
 /// 上色模型类型
 enum ColorizeModelType {
@@ -66,7 +93,7 @@ class ColorizeUpscaler {
 
       // ============== 读取图像 ==============
       final Uint8List inputBytes = await File(inputPath).readAsBytes();
-      final img.Image? srcImage = img.decodeImage(inputBytes);
+      final img.Image? srcImage = _decodeImage(inputBytes);
       if (srcImage == null) return false;
 
       final int origWidth = srcImage.width;
@@ -273,7 +300,7 @@ class ColorizeUpscaler {
       _ensureOrtEnvInitialized();
 
       final Uint8List inputBytes = await File(inputPath).readAsBytes();
-      final img.Image? srcImage = img.decodeImage(inputBytes);
+      final img.Image? srcImage = _decodeImage(inputBytes);
       if (srcImage == null) return false;
 
       final int origWidth = srcImage.width;
