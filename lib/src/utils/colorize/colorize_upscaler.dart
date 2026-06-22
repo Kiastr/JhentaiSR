@@ -14,9 +14,10 @@ Future<img.Image?> _decodeImage(Uint8List bytes) async {
   if (result != null) return result;
 
   try {
-    // 使用 dart:ui 的 instantiateImageCodec 解码（支持 WebP）
+    // 使用 dart:ui 的 instantiateImageCodec + getNextFrame 解码（支持 WebP）
     final codec = await ui.instantiateImageCodec(bytes);
-    final ui.Image decoded = await codec.getNextImage();
+    final frameInfo = await codec.getNextFrame();
+    final ui.Image decoded = frameInfo.image;
     final ByteData? byteData = await decoded.toByteData(format: ui.ImageByteFormat.rawRgba);
     if (byteData != null) {
       Uint8List rgbaBytes = byteData.buffer.asUint8List();
