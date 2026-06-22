@@ -177,7 +177,13 @@ class ColorizeUpscaler {
 
         runOptions = OrtRunOptions();
         debugPrint('DeOldify: Starting inference...');
-        outputs = await session.runAsync(runOptions, {inputName: inputOrt}).timeout(
+        final result = session.runAsync(runOptions, {inputName: inputOrt});
+        if (result == null) {
+          debugPrint('DeOldify: runAsync returned null');
+          _safeRelease(inputOrt, runOptions, session, null);
+          return false;
+        }
+        outputs = await result.timeout(
           const Duration(seconds: 60),
           onTimeout: () {
             debugPrint('DeOldify: Inference timeout after 60 seconds');
@@ -434,7 +440,13 @@ class ColorizeUpscaler {
 
         runOptions = OrtRunOptions();
         debugPrint('DDColor: Starting inference...');
-        outputs = await session.runAsync(runOptions, {inputName: inputOrt}).timeout(
+        final result = session.runAsync(runOptions, {inputName: inputOrt});
+        if (result == null) {
+          debugPrint('DDColor: runAsync returned null');
+          _safeRelease(inputOrt, runOptions, session, null);
+          return false;
+        }
+        outputs = await result.timeout(
           const Duration(seconds: 60),
           onTimeout: () {
             debugPrint('DDColor: Inference timeout after 60 seconds');
