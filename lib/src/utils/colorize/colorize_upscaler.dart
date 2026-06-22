@@ -14,8 +14,10 @@ Future<img.Image?> _decodeImage(Uint8List bytes) async {
   if (result != null) return result;
 
   try {
-    ui.Image decoded = await ui.decodeImageFromList(bytes);
-    ByteData? byteData = await decoded.toByteData(format: ui.ImageByteFormat.rawRgba);
+    // 使用 dart:ui 的 instantiateImageCodec 解码（支持 WebP）
+    final codec = await ui.instantiateImageCodec(bytes);
+    final ui.Image decoded = await codec.getNextImage();
+    final ByteData? byteData = await decoded.toByteData(format: ui.ImageByteFormat.rawRgba);
     if (byteData != null) {
       Uint8List rgbaBytes = byteData.buffer.asUint8List();
       result = img.Image.fromBytes(
@@ -27,6 +29,7 @@ Future<img.Image?> _decodeImage(Uint8List bytes) async {
       );
     }
     decoded.dispose();
+    codec.dispose();
     return result;
   } catch (e) {
     debugPrint('Failed to decode image with dart:ui: $e');
@@ -223,10 +226,10 @@ class ColorizeUpscaler {
       final Uint8List cfBytes = colorizedFull.buffer.asUint8List();
 
       // ============== 后处理 3: 高斯模糊 ==============
-      // OpenCV: GaussianBlur(src, (13,13), 0) → sigma = 0.3*((ksize-1)*0.5 - 1) + 0.8 = 2.3
+      // OpenCV: GaussianBlur(src, (13,13), 2.3) → kernel_size=13 → radius=6
       final img.Image colorizedBlurred = img.gaussianBlur(
         colorizedFull,
-        sigma: 2.3,
+        radius: 6,
       );
       final Uint8List cbBytes = colorizedBlurred.buffer.asUint8List();
 
