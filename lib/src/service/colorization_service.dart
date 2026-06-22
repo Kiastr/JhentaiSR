@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/get_instance.dart';
@@ -589,6 +590,7 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
   }
 
   /// 移动端：使用 Dart 原生 ONNX Runtime 上色（不需要 Python）
+  /// 使用 compute() 在后台 isolate 执行，避免阻塞主线程
   Future<bool> _handleImageDart(GalleryImage rawImage) async {
     log.download('start to colorize image (Dart native) ${rawImage.path}');
 
@@ -604,7 +606,6 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
         ? ColorizeModelType.deoldify
         : ColorizeModelType.ddcolor;
 
-    String? lastError;
     try {
       final params = ColorizeParams(
         inputPath: inputAbsolutePath,
@@ -614,14 +615,16 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
         threads: colorizationSetting.numThreads.value ?? 2,
       );
 
-      final bool success = type == ColorizeModelType.deoldify
-          ? await ColorizeUpscaler.colorizeDeOldify(params)
-          : await ColorizeUpscaler.colorizeDDColor(params);
+      // 使用 compute() 在后台 isolate 执行，避免阻塞主线程
+      final bool success = await compute(
+        _colorizeInIsolate,
+        params,
+      );
 
       if (!success) {
-        lastError = '上色失败: ${rawImage.path}';
-        toast(lastError!, isShort: false);
-        log.error(lastError!);
+        String errorMsg = '上色失败: ${rawImage.path}';
+        toast(errorMsg, isShort: false);
+        log.error(errorMsg);
         return false;
       }
 
@@ -632,6 +635,15 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
       log.error('Dart colorization failed', e, s);
       log.uploadError(e, extraInfos: {'rawImage': rawImage});
       return false;
+    }
+  }
+
+  /// 在 isolate 中执行上色（compute() 的入口函数）
+  static Future<bool> _colorizeInIsolate(ColorizeParams params) async {
+    if (params.modelType == ColorizeModelType.deoldify) {
+      return await ColorizeUpscaler.colorizeDeOldify(params);
+    } else {
+      return await ColorizeUpscaler.colorizeDDColor(params);
     }
   }
 
