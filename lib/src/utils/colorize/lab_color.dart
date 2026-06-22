@@ -93,17 +93,17 @@ void labToBgrPixel(double l, double a, double b, List<double> out) {
   if (linearR <= 0.0031308) {
     srgbR = 12.92 * linearR;
   } else {
-    srgbR = 1.055 * math.pow(linearR, 1.0 / 2.4) as double - 0.055;
+    srgbR = 1.055 * (math.pow(linearR, 1.0 / 2.4) as double) - 0.055;
   }
   if (linearG <= 0.0031308) {
     srgbG = 12.92 * linearG;
   } else {
-    srgbG = 1.055 * math.pow(linearG, 1.0 / 2.4) as double - 0.055;
+    srgbG = 1.055 * (math.pow(linearG, 1.0 / 2.4) as double) - 0.055;
   }
   if (linearB <= 0.0031308) {
     srgbB = 12.92 * linearB;
   } else {
-    srgbB = 1.055 * math.pow(linearB, 1.0 / 2.4) as double - 0.055;
+    srgbB = 1.055 * (math.pow(linearB, 1.0 / 2.4) as double) - 0.055;
   }
 
   out[0] = srgbB.clamp(0.0, 1.0);

@@ -2,293 +2,494 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
-import 'package:onnxruntime_v2/onnxruntime_v2.dart';
 import 'package:image/image.dart' as img;
+import 'package:onnxruntime_v2/onnxruntime_v2.dart';
 
 import 'lab_color.dart';
 
-/// 上色任务参数
+/// 上色模型类型
+enum ColorizeModelType {
+  deoldify,
+  ddcolor,
+}
+
+/// 上色推理参数
 class ColorizeParams {
   final String inputPath;
   final String outputPath;
   final String modelPath;
   final ColorizeModelType modelType;
-  final int? threads;
-  final String? inputName;
-  final String? outputName;
+  final int threads;
 
-  const ColorizeParams({
+  ColorizeParams({
     required this.inputPath,
     required this.outputPath,
     required this.modelPath,
     required this.modelType,
-    this.threads,
-    this.inputName,
-    this.outputName,
+    this.threads = 2,
   });
 }
 
-/// 上色模型类型
-enum ColorizeModelType { ddcolor, deoldify }
-
-/// 图像上色引擎（Dart 原生，基于 ONNX Runtime + image 包）
+/// ==================== DeOldify / DDColor 上色引擎 ====================
 ///
-/// 移植自 colorize.py，支持 DDColor 和 DeOldify 两种模型
-/// 所有计算都在单线程内完成，可通过 compute() 放入 Isolate
+/// 精确复现 Python colorize.py 的处理流程：
+/// - DeOldify: gray_rgb → resize(256,256) → ONNX 推理 → resize 回原图 → GaussianBlur(13,13)
+///   → LAB 分解 → 替换 a,b 通道 → 合成 → RGB
+/// - DDColor: BGR float32 → LAB L 通道 → gray_rgb → resize(256,256) → ONNX 推理 ab
+///   → resize 回原图 → 与原图 L 合成 → LAB→BGR→RGB
+///
+/// 输入: 原始图片路径 (通常是灰度漫画)
+/// 输出: 上色后的 PNG 图片路径
 class ColorizeUpscaler {
-  /// 执行 DDColor 上色（文件路径版，用于 compute() Isolate）
-  static Future<bool> colorizeDDColor(ColorizeParams params) async {
-    try {
-      final File inputFile = File(params.inputPath);
-      final Uint8List inputBytes = await inputFile.readAsBytes();
+  static bool _ortEnvInitialized = false;
 
-      final img.Image? srcImage = img.decodeImage(inputBytes);
-      if (srcImage == null) {
-        return false;
+  static void _ensureOrtEnvInitialized() {
+    if (!_ortEnvInitialized) {
+      try {
+        OrtEnv.instance.init();
+        _ortEnvInitialized = true;
+      } catch (e) {
+        // 可能已经初始化过，忽略
+        _ortEnvInitialized = true;
       }
-
-      final int origWidth = srcImage.width;
-      final int origHeight = srcImage.height;
-      final int origPixels = origWidth * origHeight;
-
-      final Float32List origL = Float32List(origPixels);
-      final Float32List _unusedA = Float32List(origPixels);
-      final Float32List _unusedB = Float32List(origPixels);
-      extractLabFromRgbUint8(
-        srcImage.bytes,
-        origWidth,
-        origHeight,
-        origL,
-        _unusedA,
-        _unusedB,
-      );
-
-      const int modelSize = 256;
-      final img.Image resized = img.copyResize(
-        srcImage,
-        width: modelSize,
-        height: modelSize,
-        interpolation: img.Interpolation.linear,
-      );
-
-      final Float32List resizedL = Float32List(modelSize * modelSize);
-      final Float32List _unusedL2 = Float32List(modelSize * modelSize);
-      final Float32List _unusedL3 = Float32List(modelSize * modelSize);
-      extractLabFromRgbUint8(
-        resized.bytes,
-        modelSize,
-        modelSize,
-        resizedL,
-        _unusedL2,
-        _unusedL3,
-      );
-
-      final Float32List fakeLabBgr = Float32List(modelSize * modelSize * 3);
-      composeLabPlanarToBgrFloat32(
-        resizedL,
-        Float32List(modelSize * modelSize),
-        Float32List(modelSize * modelSize),
-        modelSize,
-        modelSize,
-        fakeLabBgr,
-      );
-
-      final Float32List nchwInput = Float32List(1 * 3 * modelSize * modelSize);
-      for (int c = 0; c < 3; c++) {
-        for (int y = 0; y < modelSize; y++) {
-          for (int x = 0; x < modelSize; x++) {
-            final int hwIndex = (y * modelSize + x) * 3;
-            final int chwIndex = c * modelSize * modelSize + y * modelSize + x;
-            nchwInput[chwIndex] = fakeLabBgr[hwIndex + c];
-          }
-        }
-      }
-
-      final OnnxRuntime ort = OnnxRuntime();
-      final session = await ort.createSessionFromFile(params.modelPath);
-      final List<int> inputShape = [1, 3, modelSize, modelSize];
-
-      final List<double> inputList = nchwInput.toList(growable: false);
-      final Map<String, OrtValue> inputs = {
-        params.inputName ?? 'input': await OrtValue.fromList(inputList, inputShape),
-      };
-
-      final Map<String, OrtValue> outputs = await session.run(inputs);
-      final String outName = params.outputName ?? (outputs.keys.firstWhere(
-            (k) => k.toLowerCase().contains('output') || k.toLowerCase().contains('ab'),
-        orElse: () => outputs.keys.first,
-      ));
-
-      final outputOrtValue = outputs[outName];
-      if (outputOrtValue == null) {
-        return false;
-      }
-
-      final List outputShape = await outputOrtValue.shape;
-      final List outputData = await outputOrtValue.data;
-      final List<double> abFlat = outputData.cast<double>();
-
-      final int outC = outputShape[1] as int;
-      final int outH = outputShape[2] as int;
-      final int outW = outputShape[3] as int;
-
-      final Float32List abA = Float32List(outH * outW);
-      final Float32List abB = Float32List(outH * outW);
-      for (int y = 0; y < outH; y++) {
-        for (int x = 0; x < outW; x++) {
-          final int linearIdx = y * outW + x;
-          abA[linearIdx] = abFlat[0 * outH * outW + linearIdx];
-          abB[linearIdx] = abFlat[1 * outH * outW + linearIdx];
-        }
-      }
-
-      final Float32List resizedA = Float32List(origPixels);
-      final Float32List resizedB = Float32List(origPixels);
-      _resizePlanarBilinear(abA, outW, outH, resizedA, origWidth, origHeight);
-      _resizePlanarBilinear(abB, outW, outH, resizedB, origWidth, origHeight);
-
-      final img.Image result = img.Image(width: origWidth, height: origHeight, numChannels: 4);
-      composeLabToRgbUint8(origL, resizedA, resizedB, origWidth, origHeight, result.bytes);
-
-      final Uint8List pngBytes = img.encodePng(result);
-      await File(params.outputPath).writeAsBytes(pngBytes);
-
-      return true;
-    } catch (e) {
-      debugPrint('DDColor colorization failed: $e');
-      return false;
     }
   }
 
-  /// 执行 DeOldify 上色（文件路径版，用于 compute() Isolate）
+  /// ==================== DeOldify 上色 ====================
   static Future<bool> colorizeDeOldify(ColorizeParams params) async {
+    final String inputPath = params.inputPath;
+    final String outputPath = params.outputPath;
+    final String modelPath = params.modelPath;
+    final int numThreads = params.threads;
     try {
-      final File inputFile = File(params.inputPath);
-      final Uint8List inputBytes = await inputFile.readAsBytes();
+      _ensureOrtEnvInitialized();
 
+      // ============== 读取图像 ==============
+      final Uint8List inputBytes = await File(inputPath).readAsBytes();
       final img.Image? srcImage = img.decodeImage(inputBytes);
-      if (srcImage == null) {
-        return false;
-      }
+      if (srcImage == null) return false;
 
       final int origWidth = srcImage.width;
       final int origHeight = srcImage.height;
 
-      const int modelSize = 256;
-      final img.Image resizedGray = img.copyResize(
+      // image v4: 使用 buffer.asUint8List() 访问像素数据
+      final Uint8List srcBytes = srcImage.buffer.asUint8List();
+
+      // ============== 预处理: resize(256,256) ==============
+      // image v4: copyResize 返回新图像，interpolation 使用 Interpolation.linear
+      final img.Image resized = img.copyResize(
         srcImage,
-        width: modelSize,
-        height: modelSize,
+        width: 256,
+        height: 256,
         interpolation: img.Interpolation.linear,
       );
+      final Uint8List resizedBytes = resized.buffer.asUint8List();
 
-      final Uint8List grayRgbBytes = _toGrayscale3Channel(resizedGray);
-
-      final Float32List nchwInput = Float32List(1 * 3 * modelSize * modelSize);
-      for (int c = 0; c < 3; c++) {
-        for (int y = 0; y < modelSize; y++) {
-          for (int x = 0; x < modelSize; x++) {
-            final int hwIndex = (y * modelSize + x) * 4;
-            final int chwIndex = c * modelSize * modelSize + y * modelSize + x;
-            nchwInput[chwIndex] = grayRgbBytes[hwIndex + c].toDouble();
-          }
+      // ============== 构建 NCHW float32 tensor ==============
+      final Float32List nchwInput = Float32List(1 * 3 * 256 * 256);
+      for (int y = 0; y < 256; y++) {
+        for (int x = 0; x < 256; x++) {
+          final int srcIdx = (y * 256 + x) * resized.numChannels;
+          // image 库是 RGBA/RGB 格式
+          final int rVal = resizedBytes[srcIdx];
+          final int gVal = resizedBytes[srcIdx + 1];
+          final int bVal = resizedBytes[srcIdx + 2];
+          // 模型期望 BGR 顺序
+          nchwInput[0 * 256 * 256 + y * 256 + x] = bVal.toDouble();
+          nchwInput[1 * 256 * 256 + y * 256 + x] = gVal.toDouble();
+          nchwInput[2 * 256 * 256 + y * 256 + x] = rVal.toDouble();
         }
       }
 
-      final OnnxRuntime ort = OnnxRuntime();
-      final session = await ort.createSessionFromFile(params.modelPath);
-      final List<int> inputShape = [1, 3, modelSize, modelSize];
+      // ============== ONNX 推理 ==============
+      OrtSession? session;
+      OrtValueTensor? inputOrt;
+      OrtRunOptions? runOptions;
+      dynamic outputs;
 
-      final List<double> inputList = nchwInput.toList(growable: false);
-      final Map<String, OrtValue> inputs = {
-        params.inputName ?? 'input.1': await OrtValue.fromList(inputList, inputShape),
-      };
+      try {
+        final sessionOptions = OrtSessionOptions();
+        try {
+          sessionOptions.setIntraOpNumThreads(numThreads);
+        } catch (_) {}
+        try {
+          sessionOptions.appendDefaultProviders();
+        } catch (_) {
+          // GPU provider 不可用时忽略
+        }
 
-      final Map<String, OrtValue> outputs = await session.run(inputs);
-      final String outName = params.outputName ?? (outputs.keys.firstWhere(
-            (k) => k.toLowerCase().contains('output'),
-        orElse: () => outputs.keys.first,
-      ));
+        // 从文件加载模型
+        final Uint8List modelBytes = await File(modelPath).readAsBytes();
+        session = OrtSession.fromBuffer(modelBytes, sessionOptions);
 
-      final outputOrtValue = outputs[outName];
-      if (outputOrtValue == null) {
+        final String inputName = session.inputNames[0];
+
+        inputOrt = OrtValueTensor.createTensorWithDataList(
+          nchwInput.toList(growable: false),
+          [1, 3, 256, 256],
+        );
+
+        runOptions = OrtRunOptions();
+        outputs = await session.runAsync(runOptions, {inputName: inputOrt});
+      } catch (e) {
+        debugPrint('DeOldify ONNX inference error: $e');
+        _safeRelease(inputOrt, runOptions, session, outputs);
         return false;
       }
 
-      final List outputShape = await outputOrtValue.shape;
-      final List outputData = await outputOrtValue.data;
-      final List<double> flatOutput = outputData.cast<double>();
+      // 解析输出
+      final OrtValue? outputOrt = _extractFirstOutput(outputs);
+      if (outputOrt == null) {
+        debugPrint('DeOldify output is null');
+        _safeRelease(inputOrt, runOptions, session, outputs);
+        return false;
+      }
 
-      final int outC = outputShape[1] as int;
-      final int outH = outputShape[2] as int;
-      final int outW = outputShape[3] as int;
+      // outputOrt.value 返回 List<double> (float32)
+      final dynamic outputValue = outputOrt.value;
+      _safeRelease(inputOrt, runOptions, session, outputs);
 
-      final img.Image outImage = img.Image(width: outW, height: outH, numChannels: 4);
+      if (outputValue == null) {
+        debugPrint('DeOldify output value is null');
+        return false;
+      }
+
+      // DeOldify 模型输出: [1, 3, 256, 256] float32 → shape [3, 256, 256]
+      // 从 List<double> 中提取数据
+      final List<dynamic> rawData = outputValue as List<dynamic>;
+      final Float32List flatOutput = Float32List(rawData.length);
+      for (int i = 0; i < rawData.length; i++) {
+        flatOutput[i] = (rawData[i] as num).toDouble();
+      }
+
+      // ============== 后处理 1: CHW → RGBA uint8 图像 ==============
+      // 模型输出 BGR 顺序 [3, 256, 256]
+      final int outH = 256;
+      final int outW = 256;
+      final int outChannels = 4; // RGBA
+
+      final img.Image colorized256 = img.Image(
+        width: outW,
+        height: outH,
+        numChannels: outChannels,
+      );
+      final Uint8List c256Bytes = colorized256.buffer.asUint8List();
       for (int y = 0; y < outH; y++) {
         for (int x = 0; x < outW; x++) {
-          final int outIdx = (y * outW + x) * 4;
-          final int ch0 = 0 * outH * outW + y * outW + x;
-          final int ch1 = 1 * outH * outW + y * outW + x;
-          final int ch2 = 2 * outH * outW + y * outW + x;
-          outImage.bytes[outIdx] = flatOutput[ch2].round().clamp(0, 255);
-          outImage.bytes[outIdx + 1] = flatOutput[ch1].round().clamp(0, 255);
-          outImage.bytes[outIdx + 2] = flatOutput[ch0].round().clamp(0, 255);
-          outImage.bytes[outIdx + 3] = 255;
+          final int pi = y * outW + x;
+          final int dstIdx = pi * outChannels;
+          // BGR → RGBA
+          c256Bytes[dstIdx] = flatOutput[0 * outH * outW + pi].round().clamp(0, 255);
+          c256Bytes[dstIdx + 1] = flatOutput[1 * outH * outW + pi].round().clamp(0, 255);
+          c256Bytes[dstIdx + 2] = flatOutput[2 * outH * outW + pi].round().clamp(0, 255);
+          c256Bytes[dstIdx + 3] = 255;
         }
       }
 
-      final img.Image colorized = img.copyResize(
-        outImage,
+      // ============== 后处理 2: resize 回原图大小 ==============
+      final img.Image colorizedFull = img.copyResize(
+        colorized256,
         width: origWidth,
         height: origHeight,
         interpolation: img.Interpolation.linear,
       );
+      final Uint8List cfBytes = colorizedFull.buffer.asUint8List();
 
-      final img.Image blurred = img.gaussianBlur(colorized, radius: 6);
+      // ============== 后处理 3: 高斯模糊 ==============
+      // image v4: gaussianBlur(src, radius: int)
+      final img.Image colorizedBlurred = img.gaussianBlur(
+        colorizedFull,
+        radius: 2, // int 类型 (原 radius 2.3 → 近似取 2)
+      );
+      final Uint8List cbBytes = colorizedBlurred.buffer.asUint8List();
 
-      final int origPixels = origWidth * origHeight;
-      final Float32List origL = Float32List(origPixels);
-      final Float32List _ua1 = Float32List(origPixels);
-      final Float32List _ua2 = Float32List(origPixels);
-      extractLabFromRgbUint8(srcImage.bytes, origWidth, origHeight, origL, _ua1, _ua2);
+      // ============== 后处理 4: LAB 分解与合成 ==============
+      // 提取 target_l (原图 B 通道作为 LAB L uint8)
+      final Uint8List targetL = Uint8List(origWidth * origHeight);
+      for (int i = 0; i < origWidth * origHeight; i++) {
+        targetL[i] = srcBytes[i * srcImage.numChannels + 2]; // B 通道
+      }
 
-      final Float32List colorA = Float32List(origPixels);
-      final Float32List colorB = Float32List(origPixels);
-      final Float32List colorL = Float32List(origPixels);
-      extractLabFromRgbUint8(blurred.bytes, origWidth, origHeight, colorL, colorA, colorB);
+      // 构造结果图
+      final img.Image resultImage = img.Image(
+        width: origWidth,
+        height: origHeight,
+        numChannels: 4,
+      );
+      final Uint8List resultBytes = resultImage.buffer.asUint8List();
 
-      final img.Image result = img.Image(width: origWidth, height: origHeight, numChannels: 4);
-      composeLabToRgbUint8(origL, colorA, colorB, origWidth, origHeight, result.bytes);
+      for (int y = 0; y < origHeight; y++) {
+        for (int x = 0; x < origWidth; x++) {
+          final int pi = y * origWidth + x;
+          final int srcIdx = pi * colorizedBlurred.numChannels;
 
-      final Uint8List pngBytes = img.encodePng(result);
-      await File(params.outputPath).writeAsBytes(pngBytes);
+          // colorizedBlurred 被当做 BGR 图处理 LAB 转换
+          // 传入 bgrToLabPixel: b=cbBytes[srcIdx+2], g=cbBytes[srcIdx+1], r=cbBytes[srcIdx]
+          double bInput = cbBytes[srcIdx + 2] / 255.0;
+          double gInput = cbBytes[srcIdx + 1] / 255.0;
+          double rInput = cbBytes[srcIdx] / 255.0;
+
+          final List<double> labPixel = List<double>.filled(3, 0.0);
+          bgrToLabPixel(bInput, gInput, rInput, labPixel);
+
+          int aUint8 = (labPixel[1] + 128.0).round().clamp(0, 255);
+          int bUint8 = (labPixel[2] + 128.0).round().clamp(0, 255);
+          int lVal = targetL[pi];
+
+          double lStd = lVal * 100.0 / 255.0;
+          double aStd = aUint8 - 128.0;
+          double bStd = bUint8 - 128.0;
+
+          final List<double> bgrBuf = List<double>.filled(3, 0.0);
+          labToBgrPixel(lStd, aStd, bStd, bgrBuf);
+
+          final int dstIdx = pi * 4;
+          resultBytes[dstIdx] = (bgrBuf[2] * 255.0).round().clamp(0, 255);
+          resultBytes[dstIdx + 1] = (bgrBuf[1] * 255.0).round().clamp(0, 255);
+          resultBytes[dstIdx + 2] = (bgrBuf[0] * 255.0).round().clamp(0, 255);
+          resultBytes[dstIdx + 3] = 255;
+        }
+      }
+
+      // ============== 保存输出 ==============
+      final Uint8List pngBytes = img.encodePng(resultImage);
+      await File(outputPath).writeAsBytes(pngBytes);
 
       return true;
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('DeOldify colorization failed: $e');
+      debugPrint('Stack: $stack');
       return false;
     }
   }
 
-  /// 将图像转为 3 通道灰度图（返回 RGBA 格式字节）
-  static Uint8List _toGrayscale3Channel(img.Image src) {
-    final int w = src.width;
-    final int h = src.height;
-    final Uint8List out = Uint8List(w * h * 4);
-    for (int i = 0, j = 0; i < src.bytes.length; i += 4, j += 4) {
-      final int r = src.bytes[i];
-      final int g = src.bytes[i + 1];
-      final int b = src.bytes[i + 2];
-      final int gray = (0.299 * r + 0.587 * g + 0.114 * b).round().clamp(0, 255);
-      out[j] = gray;
-      out[j + 1] = gray;
-      out[j + 2] = gray;
-      out[j + 3] = 255;
+  /// ==================== DDColor Tiny 上色 ====================
+  static Future<bool> colorizeDDColor(ColorizeParams params) async {
+    final String inputPath = params.inputPath;
+    final String outputPath = params.outputPath;
+    final String modelPath = params.modelPath;
+    final int numThreads = params.threads;
+    try {
+      _ensureOrtEnvInitialized();
+
+      final Uint8List inputBytes = await File(inputPath).readAsBytes();
+      final img.Image? srcImage = img.decodeImage(inputBytes);
+      if (srcImage == null) return false;
+
+      final int origWidth = srcImage.width;
+      final int origHeight = srcImage.height;
+      final Uint8List srcBytes = srcImage.buffer.asUint8List();
+
+      // ============== 提取原图 LAB L 通道 (float32 [0, 100]) ==============
+      final Float32List origL = Float32List(origWidth * origHeight);
+      final List<double> labPixel = List<double>.filled(3, 0.0);
+
+      for (int i = 0; i < origWidth * origHeight; i++) {
+        final int srcIdx = i * srcImage.numChannels;
+        double b0 = srcBytes[srcIdx + 2] / 255.0;
+        double g0 = srcBytes[srcIdx + 1] / 255.0;
+        double r0 = srcBytes[srcIdx] / 255.0;
+        bgrToLabPixel(b0, g0, r0, labPixel);
+        origL[i] = labPixel[0];
+      }
+
+      // ============== resize → (256, 256) ==============
+      final img.Image resized = img.copyResize(
+        srcImage,
+        width: 256,
+        height: 256,
+        interpolation: img.Interpolation.linear,
+      );
+      final Uint8List resizedBytes = resized.buffer.asUint8List();
+
+      // ============== img_l: resized → LAB L 通道 float32 [0,100] ==============
+      final Float32List imgL = Float32List(256 * 256);
+      for (int i = 0; i < 256 * 256; i++) {
+        final int srcIdx = i * resized.numChannels;
+        double b0 = resizedBytes[srcIdx + 2] / 255.0;
+        double g0 = resizedBytes[srcIdx + 1] / 255.0;
+        double r0 = resizedBytes[srcIdx] / 255.0;
+        bgrToLabPixel(b0, g0, r0, labPixel);
+        imgL[i] = labPixel[0];
+      }
+
+      // ============== img_gray_lab = (L, 0, 0) → RGB float32 [0,1] ==============
+      final List<double> bgrBuf = List<double>.filled(3, 0.0);
+      final Float32List grayR = Float32List(256 * 256);
+      final Float32List grayG = Float32List(256 * 256);
+      final Float32List grayB = Float32List(256 * 256);
+
+      for (int i = 0; i < 256 * 256; i++) {
+        labToBgrPixel(imgL[i], 0.0, 0.0, bgrBuf);
+        grayR[i] = bgrBuf[2];
+        grayG[i] = bgrBuf[1];
+        grayB[i] = bgrBuf[0];
+      }
+
+      // ============== NCHW [0,1] float32 ==============
+      final Float32List nchwInput = Float32List(1 * 3 * 256 * 256);
+      for (int y = 0; y < 256; y++) {
+        for (int x = 0; x < 256; x++) {
+          final int pi = y * 256 + x;
+          nchwInput[0 * 256 * 256 + pi] = grayR[pi];
+          nchwInput[1 * 256 * 256 + pi] = grayG[pi];
+          nchwInput[2 * 256 * 256 + pi] = grayB[pi];
+        }
+      }
+
+      // ============== ONNX 推理 ==============
+      OrtSession? session;
+      OrtValueTensor? inputOrt;
+      OrtRunOptions? runOptions;
+      dynamic outputs;
+
+      try {
+        final sessionOptions = OrtSessionOptions();
+        try {
+          sessionOptions.setIntraOpNumThreads(numThreads);
+        } catch (_) {}
+        try {
+          sessionOptions.appendDefaultProviders();
+        } catch (_) {}
+
+        final Uint8List modelBytes = await File(modelPath).readAsBytes();
+        session = OrtSession.fromBuffer(modelBytes, sessionOptions);
+        final String inputName = session.inputNames[0];
+
+        inputOrt = OrtValueTensor.createTensorWithDataList(
+          nchwInput.toList(growable: false),
+          [1, 3, 256, 256],
+        );
+
+        runOptions = OrtRunOptions();
+        outputs = await session.runAsync(runOptions, {inputName: inputOrt});
+      } catch (e) {
+        debugPrint('DDColor ONNX inference error: $e');
+        _safeRelease(inputOrt, runOptions, session, outputs);
+        return false;
+      }
+
+      final OrtValue? outputOrt = _extractFirstOutput(outputs);
+      if (outputOrt == null) {
+        debugPrint('DDColor output is null');
+        _safeRelease(inputOrt, runOptions, session, outputs);
+        return false;
+      }
+
+      final dynamic outputValue = outputOrt.value;
+      _safeRelease(inputOrt, runOptions, session, outputs);
+
+      if (outputValue == null) {
+        debugPrint('DDColor output value is null');
+        return false;
+      }
+
+      // DDColor 模型输出: [1, 2, 256, 256] float32 → shape [2, 256, 256]
+      final List<dynamic> rawData = outputValue as List<dynamic>;
+      final Float32List flatOutput = Float32List(rawData.length);
+      for (int i = 0; i < rawData.length; i++) {
+        flatOutput[i] = (rawData[i] as num).toDouble();
+      }
+
+      // ============== 后处理: ab → resize → 与 origL 合成 ==============
+      final int outH = 256;
+      final int outW = 256;
+      final Float32List abA = Float32List(outH * outW);
+      final Float32List abB = Float32List(outH * outW);
+      for (int y = 0; y < outH; y++) {
+        for (int x = 0; x < outW; x++) {
+          final int pi = y * outW + x;
+          abA[pi] = flatOutput[0 * outH * outW + pi];
+          abB[pi] = flatOutput[1 * outH * outW + pi];
+        }
+      }
+
+      // resize ab 到原图大小 (双线性插值)
+      final Float32List abAResized = Float32List(origWidth * origHeight);
+      final Float32List abBResized = Float32List(origWidth * origHeight);
+      _resizePlanarBilinear(abA, outW, outH, abAResized, origWidth, origHeight);
+      _resizePlanarBilinear(abB, outW, outH, abBResized, origWidth, origHeight);
+
+      // ============== LAB → BGR → RGB 保存 ==============
+      final img.Image resultImage = img.Image(
+        width: origWidth,
+        height: origHeight,
+        numChannels: 4,
+      );
+      final Uint8List resultBytes = resultImage.buffer.asUint8List();
+
+      for (int i = 0; i < origWidth * origHeight; i++) {
+        final int dstIdx = i * 4;
+        labToBgrPixel(origL[i], abAResized[i], abBResized[i], bgrBuf);
+        resultBytes[dstIdx] = (bgrBuf[2] * 255.0).round().clamp(0, 255);
+        resultBytes[dstIdx + 1] = (bgrBuf[1] * 255.0).round().clamp(0, 255);
+        resultBytes[dstIdx + 2] = (bgrBuf[0] * 255.0).round().clamp(0, 255);
+        resultBytes[dstIdx + 3] = 255;
+      }
+
+      final Uint8List pngBytes = img.encodePng(resultImage);
+      await File(outputPath).writeAsBytes(pngBytes);
+
+      return true;
+    } catch (e, stack) {
+      debugPrint('DDColor colorization failed: $e');
+      debugPrint('Stack: $stack');
+      return false;
     }
-    return out;
   }
 
-  /// 双线性插值 resize 单通道 float32
+  /// 从 runAsync 输出 (List 或 Map) 中提取第一个 OrtValue
+  static OrtValue? _extractFirstOutput(dynamic outputs) {
+    if (outputs == null) return null;
+    if (outputs is List) {
+      for (var item in outputs) {
+        if (item != null) return item as OrtValue;
+      }
+      return null;
+    }
+    if (outputs is Map) {
+      for (var v in outputs.values) {
+        if (v != null) return v as OrtValue;
+      }
+      return null;
+    }
+    return null;
+  }
+
+  /// 安全释放 ONNX 资源
+  static void _safeRelease(
+    OrtValueTensor? inputOrt,
+    OrtRunOptions? runOptions,
+    OrtSession? session,
+    dynamic outputs,
+  ) {
+    try {
+      inputOrt?.release();
+    } catch (_) {}
+    try {
+      runOptions?.release();
+    } catch (_) {}
+    try {
+      if (outputs is List) {
+        for (var v in outputs) {
+          try {
+            (v as OrtValue?)?.release();
+          } catch (_) {}
+        }
+      } else if (outputs is Map) {
+        for (var v in outputs.values) {
+          try {
+            (v as OrtValue?)?.release();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    try {
+      session?.release();
+    } catch (_) {}
+  }
+
+  /// 平面图像的双线性插值 (float32 单通道)
   static void _resizePlanarBilinear(
     Float32List src,
     int srcW,

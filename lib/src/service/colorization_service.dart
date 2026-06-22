@@ -610,7 +610,7 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
         outputPath: outputAbsolutePath,
         modelPath: modelPath,
         modelType: type,
-        threads: colorizationSetting.numThreads.value,
+        threads: colorizationSetting.numThreads.value ?? 2,
       );
 
       final bool success = type == ColorizeModelType.deoldify
