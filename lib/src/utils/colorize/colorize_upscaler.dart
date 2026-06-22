@@ -101,12 +101,28 @@ class ColorizeUpscaler {
       final Uint8List inputBytes = await File(inputPath).readAsBytes();
       debugPrint('DeOldify: Image size ${inputBytes.length} bytes');
       
-      final img.Image? srcImage = await _decodeImage(inputBytes);
-      if (srcImage == null) {
+      final img.Image? decodedImage = await _decodeImage(inputBytes);
+      if (decodedImage == null) {
         debugPrint('DeOldify: Failed to decode image');
         return false;
       }
-      debugPrint('DeOldify: Decoded image ${srcImage.width}x${srcImage.height}');
+      debugPrint('DeOldify: Decoded image ${decodedImage.width}x${decodedImage.height}');
+
+      // 预缩放: 如果原图过大，先缩小到长边 <= 1280，避免后续 resize 卡顿
+      const int maxSide = 1280;
+      img.Image srcImage = decodedImage;
+      if (decodedImage.width > maxSide || decodedImage.height > maxSide) {
+        final double scale = maxSide / (decodedImage.width > decodedImage.height ? decodedImage.width : decodedImage.height);
+        final int newW = (decodedImage.width * scale).round();
+        final int newH = (decodedImage.height * scale).round();
+        debugPrint('DeOldify: Pre-scaling to ${newW}x${newH}');
+        srcImage = img.copyResize(
+          decodedImage,
+          width: newW,
+          height: newH,
+          interpolation: img.Interpolation.linear,
+        );
+      }
 
       final int origWidth = srcImage.width;
       final int origHeight = srcImage.height;
@@ -184,10 +200,10 @@ class ColorizeUpscaler {
           return false;
         }
         outputs = await result.timeout(
-          const Duration(seconds: 60),
+          const Duration(seconds: 30),
           onTimeout: () {
-            debugPrint('DeOldify: Inference timeout after 60 seconds');
-            throw TimeoutException('ONNX inference timeout');
+            debugPrint('DeOldify: Inference timeout after 30 seconds');
+            throw TimeoutException('ONNX推理超时(30秒)，可能是图片过大或性能不足');
           },
         );
         debugPrint('DeOldify: Inference completed');
@@ -336,12 +352,28 @@ class ColorizeUpscaler {
       final Uint8List inputBytes = await File(inputPath).readAsBytes();
       debugPrint('DDColor: Image size ${inputBytes.length} bytes');
       
-      final img.Image? srcImage = await _decodeImage(inputBytes);
-      if (srcImage == null) {
+      final img.Image? decodedImage = await _decodeImage(inputBytes);
+      if (decodedImage == null) {
         debugPrint('DDColor: Failed to decode image');
         return false;
       }
-      debugPrint('DDColor: Decoded image ${srcImage.width}x${srcImage.height}');
+      debugPrint('DDColor: Decoded image ${decodedImage.width}x${decodedImage.height}');
+
+      // 预缩放: 如果原图过大，先缩小到长边 <= 1280
+      const int maxSide = 1280;
+      img.Image srcImage = decodedImage;
+      if (decodedImage.width > maxSide || decodedImage.height > maxSide) {
+        final double scale = maxSide / (decodedImage.width > decodedImage.height ? decodedImage.width : decodedImage.height);
+        final int newW = (decodedImage.width * scale).round();
+        final int newH = (decodedImage.height * scale).round();
+        debugPrint('DDColor: Pre-scaling to ${newW}x${newH}');
+        srcImage = img.copyResize(
+          decodedImage,
+          width: newW,
+          height: newH,
+          interpolation: img.Interpolation.linear,
+        );
+      }
 
       final int origWidth = srcImage.width;
       final int origHeight = srcImage.height;
@@ -447,10 +479,10 @@ class ColorizeUpscaler {
           return false;
         }
         outputs = await result.timeout(
-          const Duration(seconds: 60),
+          const Duration(seconds: 30),
           onTimeout: () {
-            debugPrint('DDColor: Inference timeout after 60 seconds');
-            throw TimeoutException('ONNX inference timeout');
+            debugPrint('DDColor: Inference timeout after 30 seconds');
+            throw TimeoutException('ONNX推理超时(30秒)，可能是图片过大或性能不足');
           },
         );
         debugPrint('DDColor: Inference completed');

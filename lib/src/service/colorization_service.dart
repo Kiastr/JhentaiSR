@@ -604,6 +604,7 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
         ? ColorizeModelType.deoldify
         : ColorizeModelType.ddcolor;
 
+    String? lastError;
     try {
       final params = ColorizeParams(
         inputPath: inputAbsolutePath,
@@ -618,15 +619,16 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
           : await ColorizeUpscaler.colorizeDDColor(params);
 
       if (!success) {
-        String errorMsg = '上色失败: ${rawImage.path}';
-        toast(errorMsg, isShort: false);
-        log.error(errorMsg);
+        lastError = '上色失败: ${rawImage.path}';
+        toast(lastError!, isShort: false);
+        log.error(lastError!);
         return false;
       }
 
       return true;
     } catch (e, s) {
-      toast('internalError'.tr + e.toString(), isShort: false);
+      String errorMsg = '上色失败: ${rawImage.path}\n错误: $e';
+      toast(errorMsg, isShort: false);
       log.error('Dart colorization failed', e, s);
       log.uploadError(e, extraInfos: {'rawImage': rawImage});
       return false;
