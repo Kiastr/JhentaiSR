@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -96,9 +97,16 @@ class ColorizeUpscaler {
       _ensureOrtEnvInitialized();
 
       // ============== 读取图像 ==============
+      debugPrint('DeOldify: Reading image from $inputPath');
       final Uint8List inputBytes = await File(inputPath).readAsBytes();
+      debugPrint('DeOldify: Image size ${inputBytes.length} bytes');
+      
       final img.Image? srcImage = await _decodeImage(inputBytes);
-      if (srcImage == null) return false;
+      if (srcImage == null) {
+        debugPrint('DeOldify: Failed to decode image');
+        return false;
+      }
+      debugPrint('DeOldify: Decoded image ${srcImage.width}x${srcImage.height}');
 
       final int origWidth = srcImage.width;
       final int origHeight = srcImage.height;
@@ -139,19 +147,25 @@ class ColorizeUpscaler {
       dynamic outputs;
 
       try {
+        debugPrint('DeOldify: Loading model from $modelPath');
         final sessionOptions = OrtSessionOptions();
         try {
           sessionOptions.setIntraOpNumThreads(numThreads);
-        } catch (_) {}
+          debugPrint('DeOldify: Set threads to $numThreads');
+        } catch (e) {
+          debugPrint('DeOldify: Failed to set threads: $e');
+        }
         try {
           sessionOptions.appendDefaultProviders();
-        } catch (_) {
-          // GPU provider 不可用时忽略
+        } catch (e) {
+          debugPrint('DeOldify: No GPU provider: $e');
         }
 
         // 从文件加载模型
         final Uint8List modelBytes = await File(modelPath).readAsBytes();
+        debugPrint('DeOldify: Model size ${modelBytes.length} bytes');
         session = OrtSession.fromBuffer(modelBytes, sessionOptions);
+        debugPrint('DeOldify: Session created, input names: ${session.inputNames}');
 
         final String inputName = session.inputNames[0];
 
@@ -159,9 +173,18 @@ class ColorizeUpscaler {
           nchwInput.toList(growable: false),
           [1, 3, 256, 256],
         );
+        debugPrint('DeOldify: Input tensor created');
 
         runOptions = OrtRunOptions();
-        outputs = await session.runAsync(runOptions, {inputName: inputOrt});
+        debugPrint('DeOldify: Starting inference...');
+        outputs = await session.runAsync(runOptions, {inputName: inputOrt}).timeout(
+          const Duration(seconds: 60),
+          onTimeout: () {
+            debugPrint('DeOldify: Inference timeout after 60 seconds');
+            throw TimeoutException('ONNX inference timeout');
+          },
+        );
+        debugPrint('DeOldify: Inference completed');
       } catch (e) {
         debugPrint('DeOldify ONNX inference error: $e');
         _safeRelease(inputOrt, runOptions, session, outputs);
@@ -303,9 +326,16 @@ class ColorizeUpscaler {
     try {
       _ensureOrtEnvInitialized();
 
+      debugPrint('DDColor: Reading image from $inputPath');
       final Uint8List inputBytes = await File(inputPath).readAsBytes();
+      debugPrint('DDColor: Image size ${inputBytes.length} bytes');
+      
       final img.Image? srcImage = await _decodeImage(inputBytes);
-      if (srcImage == null) return false;
+      if (srcImage == null) {
+        debugPrint('DDColor: Failed to decode image');
+        return false;
+      }
+      debugPrint('DDColor: Decoded image ${srcImage.width}x${srcImage.height}');
 
       final int origWidth = srcImage.width;
       final int origHeight = srcImage.height;
@@ -375,25 +405,43 @@ class ColorizeUpscaler {
       dynamic outputs;
 
       try {
+        debugPrint('DDColor: Loading model from $modelPath');
         final sessionOptions = OrtSessionOptions();
         try {
           sessionOptions.setIntraOpNumThreads(numThreads);
-        } catch (_) {}
+          debugPrint('DDColor: Set threads to $numThreads');
+        } catch (e) {
+          debugPrint('DDColor: Failed to set threads: $e');
+        }
         try {
           sessionOptions.appendDefaultProviders();
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('DDColor: No GPU provider: $e');
+        }
 
         final Uint8List modelBytes = await File(modelPath).readAsBytes();
+        debugPrint('DDColor: Model size ${modelBytes.length} bytes');
         session = OrtSession.fromBuffer(modelBytes, sessionOptions);
+        debugPrint('DDColor: Session created, input names: ${session.inputNames}');
+        
         final String inputName = session.inputNames[0];
 
         inputOrt = OrtValueTensor.createTensorWithDataList(
           nchwInput.toList(growable: false),
           [1, 3, 256, 256],
         );
+        debugPrint('DDColor: Input tensor created');
 
         runOptions = OrtRunOptions();
-        outputs = await session.runAsync(runOptions, {inputName: inputOrt});
+        debugPrint('DDColor: Starting inference...');
+        outputs = await session.runAsync(runOptions, {inputName: inputOrt}).timeout(
+          const Duration(seconds: 60),
+          onTimeout: () {
+            debugPrint('DDColor: Inference timeout after 60 seconds');
+            throw TimeoutException('ONNX inference timeout');
+          },
+        );
+        debugPrint('DDColor: Inference completed');
       } catch (e) {
         debugPrint('DDColor ONNX inference error: $e');
         _safeRelease(inputOrt, runOptions, session, outputs);
