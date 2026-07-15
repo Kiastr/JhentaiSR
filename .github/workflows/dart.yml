@@ -82,22 +82,59 @@ jobs:
       - name: Patch missing Windows plugin stub (system_network_proxy_windows)
         run: |
           # system_network_proxy_windows declares `windows: pluginClass: none` but its
-          # published package is missing the required none.h stub, which Flutter 3.38's
-          # generated_plugin_registrant.cc unconditionally #includes. Drop the stub into
-          # the pub cache so the Windows build can resolve the include.
+          # published package ships NO windows/ native stub at all (no none.h, none.cpp,
+          # or CMakeLists.txt). Flutter 3.38 still emits `add_subdirectory(.../windows)`
+          # for it and calls `noneRegisterWithRegistrar` from the generated registrant,
+          # so we provide the standard `pluginClass: none` stub files in the pub cache.
           $pluginBase = "$env:PUB_CACHE\hosted\pub.dev"
           $pluginDir = Get-ChildItem $pluginBase -Directory -Filter "system_network_proxy_windows-*" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($pluginDir) {
-            $incDir = Join-Path $pluginDir.FullName "windows\include\system_network_proxy_windows"
-            New-Item -ItemType Directory -Force -Path $incDir | Out-Null
-            $noneH = Join-Path $incDir "none.h"
-            if (-not (Test-Path $noneH)) {
-              Set-Content -Path $noneH -Value '#pragma once'
-            }
-            Write-Host "Ensured none.h exists at $noneH"
-          } else {
+          if (-not $pluginDir) {
             Write-Warning "system_network_proxy_windows not found under $pluginBase"
+            exit 0
           }
+          $winDir = Join-Path $pluginDir.FullName "windows"
+          $incDir = Join-Path $winDir "include\system_network_proxy_windows"
+          New-Item -ItemType Directory -Force -Path $incDir | Out-Null
+
+          # none.h
+          $noneH = Join-Path $incDir "none.h"
+          Set-Content -Path $noneH -Value @(
+            '#ifndef SYSTEM_NETWORK_PROXY_WINDOWS_NONE_H_'
+            '#define SYSTEM_NETWORK_PROXY_WINDOWS_NONE_H_'
+            ''
+            '#include <flutter/plugin_registrar_windows.h>'
+            ''
+            'void noneRegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar);'
+            ''
+            '#endif  // SYSTEM_NETWORK_PROXY_WINDOWS_NONE_H_'
+          )
+
+          # none.cpp (empty registrar: plugin does not support Windows natively)
+          $noneCpp = Join-Path $winDir "none.cpp"
+          Set-Content -Path $noneCpp -Value @(
+            '#include "include/system_network_proxy_windows/none.h"'
+            ''
+            'void noneRegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar) {}'
+          )
+
+          # CMakeLists.txt (standard Flutter none-plugin layout)
+          $cmake = Join-Path $winDir "CMakeLists.txt"
+          Set-Content -Path $cmake -Value @(
+            'cmake_minimum_required(VERSION 3.14)'
+            'set(PluginName system_network_proxy_windows_plugin)'
+            'add_library(${PluginName} SHARED'
+            '  "include/system_network_proxy_windows/none.h"'
+            '  "none.cpp"'
+            ')'
+            'apply_standard_settings(${PluginName})'
+            'set_target_properties(${PluginName} PROPERTIES'
+            '  CXX_VISIBILITY_PRESET hidden)'
+            'target_include_directories(${PluginName} INTERFACE'
+            '  "${CMAKE_CURRENT_SOURCE_DIR}/include")'
+            'target_link_libraries(${PluginName} PRIVATE flutter flutter_wrapper_plugin)'
+          )
+
+          Write-Host "Created Windows stub files in $winDir"
 
       - name: Build Runner
         run: |
