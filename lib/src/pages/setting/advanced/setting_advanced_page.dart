@@ -16,6 +16,7 @@ import 'package:jhentai/src/setting/advanced_setting.dart';
 import 'package:jhentai/src/service/path_service.dart';
 import 'package:jhentai/src/service/log.dart';
 import 'package:jhentai/src/utils/toast_util.dart';
+import 'package:jhentai/src/utils/anime4k/anime4k_service.dart';
 import 'package:jhentai/src/widget/loading_state_indicator.dart';
 import 'package:path/path.dart';
 
@@ -297,21 +298,22 @@ class _SettingAdvancedPageState extends State<SettingAdvancedPage> {
     setStateSafely(() => _imageCacheLoadingState = LoadingState.loading);
 
     try {
-      _imageCacheSize = await compute(
+      int totalBytes = await compute(
         (dirPath) {
           Directory cacheImagesDirectory = Directory(dirPath);
 
-          int totalBytes;
           if (!cacheImagesDirectory.existsSync()) {
-            totalBytes = 0;
+            return 0;
           } else {
-            totalBytes = cacheImagesDirectory.listSync().fold<int>(0, (previousValue, element) => previousValue += (element as File).lengthSync());
+            return cacheImagesDirectory.listSync().fold<int>(0, (previousValue, element) => previousValue += (element as File).lengthSync());
           }
-
-          return byte2String(totalBytes.toDouble());
         },
         join(pathService.tempDir.path, cacheImageFolderName),
       );
+
+      totalBytes += await Anime4KService.instance.getCacheSize();
+
+      _imageCacheSize = byte2String(totalBytes.toDouble());
     } catch (e) {
       log.error(e);
       _imageCacheSize = '-1B';
@@ -328,6 +330,7 @@ class _SettingAdvancedPageState extends State<SettingAdvancedPage> {
     }
 
     await clearDiskCachedImages();
+    await Anime4KService.instance.clearCache();
     await _getImagesCacheSize();
 
     toast('clearSuccess'.tr, isCenter: false);
