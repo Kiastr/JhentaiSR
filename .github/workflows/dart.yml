@@ -30,6 +30,7 @@ jobs:
         run: |
           flutter clean
           rm -f pubspec.lock
+          flutter config --enable-swift-package-manager
           flutter pub get
 
       - name: Build Runner
@@ -77,6 +78,7 @@ jobs:
       - name: Clean and Get dependencies
         run: |
           flutter clean
+          flutter config --enable-swift-package-manager
           flutter pub get
 
       - name: Build Runner

@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 project(jhentai LANGUAGES CXX)
 
+# Suppress MSVC STL1011 error from plugins (local_auth_windows / permission_handler_windows)
+# that still include <experimental/coroutine> on newer Visual Studio toolchains.
+add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+
 set(BINARY_NAME "jhentai")
 
 cmake_policy(SET CMP0063 NEW)
