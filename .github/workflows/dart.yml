@@ -79,6 +79,26 @@ jobs:
           flutter clean
           flutter pub get
 
+      - name: Patch missing Windows plugin stub (system_network_proxy_windows)
+        run: |
+          # system_network_proxy_windows declares `windows: pluginClass: none` but its
+          # published package is missing the required none.h stub, which Flutter 3.38's
+          # generated_plugin_registrant.cc unconditionally #includes. Drop the stub into
+          # the pub cache so the Windows build can resolve the include.
+          $pluginBase = "$env:PUB_CACHE\hosted\pub.dev"
+          $pluginDir = Get-ChildItem $pluginBase -Directory -Filter "system_network_proxy_windows-*" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($pluginDir) {
+            $incDir = Join-Path $pluginDir.FullName "windows\include\system_network_proxy_windows"
+            New-Item -ItemType Directory -Force -Path $incDir | Out-Null
+            $noneH = Join-Path $incDir "none.h"
+            if (-not (Test-Path $noneH)) {
+              Set-Content -Path $noneH -Value '#pragma once'
+            }
+            Write-Host "Ensured none.h exists at $noneH"
+          } else {
+            Write-Warning "system_network_proxy_windows not found under $pluginBase"
+          }
+
       - name: Build Runner
         run: |
           if (Select-String -Path pubspec.yaml -Pattern "build_runner" -Quiet) {
