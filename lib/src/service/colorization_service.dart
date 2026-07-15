@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
@@ -667,6 +668,76 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
       throw PlatformException(code: 'NULL_RESULT', message: '原生引擎未返回输出路径');
     }
     return result;
+  }
+
+  /// 在线阅读模式：对缓存到磁盘的网络图片执行上色，返回上色后的图片字节；失败/环境未就绪返回 null。
+  /// 不依赖画廊下载结构，输入为网络图片的本地缓存文件绝对路径。
+  /// 用于"先显示原图、后台上色完成后替换"的实时上色流程。
+  Future<Uint8List?> colorizeOnlineFile(String inputAbsolutePath, String cacheKey) async {
+    if (colorizationSetting.modelDirectoryPath.value == null) {
+      return null;
+    }
+    if (!_useNativePlatform && _scriptPath == null) {
+      return null;
+    }
+
+    final String outDirPath = join(pathService.getVisibleDir().path, 'online_colorize');
+    final Directory outDir = Directory(outDirPath);
+    if (!await outDir.exists()) {
+      await outDir.create(recursive: true);
+    }
+    final String outputPath = join(outDirPath, '${cacheKey.hashCode.abs()}_colorized.png');
+
+    // 同一张网络图片重复进入时直接复用已有结果，避免重复上色
+    if (await File(outputPath).exists()) {
+      return await File(outputPath).readAsBytes();
+    }
+
+    final String modelPath = join(
+      colorizationSetting.modelDirectoryPath.value!,
+      colorizationSetting.model.value.fileName,
+    );
+
+    try {
+      if (_useNativePlatform) {
+        if (!GetPlatform.isAndroid) {
+          return null;
+        }
+        await _colorizeViaNative(
+          inputPath: inputAbsolutePath,
+          outputPath: outputPath,
+          modelPath: modelPath,
+          type: colorizationSetting.model.value.scriptType,
+          useNnapi: colorizationSetting.useNNAPI.value ?? true,
+        );
+      } else {
+        final String pythonPath = colorizationSetting.pythonPath.value ?? (GetPlatform.isWindows ? 'python' : 'python3');
+        final ProcessResult result = await Process.run(
+          pythonPath,
+          [
+            _scriptPath!,
+            '-i', inputAbsolutePath,
+            '-o', outputPath,
+            '-m', modelPath,
+            '--type', colorizationSetting.model.value.scriptType,
+            '--device', colorizationSetting.useGPU.value ? 'cuda' : 'cpu',
+          ],
+          runInShell: true,
+        );
+        if (result.exitCode != 0) {
+          log.error('Online colorize (python) failed: ${result.stderr}');
+          return null;
+        }
+      }
+    } catch (e, s) {
+      log.error('Online colorize failed', e, s);
+      return null;
+    }
+
+    if (await File(outputPath).exists()) {
+      return await File(outputPath).readAsBytes();
+    }
+    return null;
   }
 
   void _checkInfoSourceExists() {

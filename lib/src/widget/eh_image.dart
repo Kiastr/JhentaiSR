@@ -13,6 +13,7 @@ import 'package:jhentai/src/utils/anime4k/anime4k_service.dart';
 import 'dart:io' as io;
 
 import '../service/gallery_download_service.dart';
+import '../service/colorization_service.dart';
 
 typedef LoadingProgressWidgetBuilder = Widget Function(double);
 typedef FailedWidgetBuilder = Widget Function(ExtendedImageState state);
@@ -35,6 +36,7 @@ class EHImage extends StatefulWidget {
   final List<BoxShadow>? shadows;
   final bool forceFadeIn;
   final int? maxBytes;
+  final bool enableOnlineColorization;
 
   final LoadingProgressWidgetBuilder? loadingProgressWidgetBuilder;
   final FailedWidgetBuilder? failedWidgetBuilder;
@@ -58,6 +60,7 @@ class EHImage extends StatefulWidget {
     this.shadows,
     this.forceFadeIn = false,
     this.maxBytes,
+    this.enableOnlineColorization = false,
     this.loadingProgressWidgetBuilder,
     this.failedWidgetBuilder,
     this.downloadingWidgetBuilder,
@@ -81,6 +84,7 @@ class EHImage extends StatefulWidget {
     this.shadows,
     this.forceFadeIn = false,
     this.maxBytes,
+    this.enableOnlineColorization = false,
     this.loadingProgressWidgetBuilder,
     this.failedWidgetBuilder,
     this.downloadingWidgetBuilder,
@@ -96,6 +100,8 @@ class EHImage extends StatefulWidget {
 class _EHImageState extends State<EHImage> {
   Uint8List? _upscaledBytes;
   bool _isUpscaling = false;
+  Uint8List? _colorizedBytes;
+  bool _isColorizing = false;
 
   @override
   Widget build(BuildContext context) {
@@ -103,8 +109,10 @@ class _EHImageState extends State<EHImage> {
 
     if (advancedSetting.inNoImageMode.isTrue) {
       child = const SizedBox();
+    } else if (_colorizedBytes != null) {
+      child = _buildMemoryImage(context, _colorizedBytes!);
     } else if (_upscaledBytes != null) {
-      child = _buildMemoryImage(context);
+      child = _buildMemoryImage(context, _upscaledBytes!);
     } else if (widget.galleryImage.path == null) {
       child = buildNetworkImage(context);
     } else {
@@ -134,9 +142,9 @@ class _EHImageState extends State<EHImage> {
     );
   }
 
-  Widget _buildMemoryImage(BuildContext context) {
+  Widget _buildMemoryImage(BuildContext context, Uint8List bytes) {
     return ExtendedImage.memory(
-      _upscaledBytes!,
+      bytes,
       fit: widget.fit,
       height: widget.containerHeight,
       width: widget.containerWidth,
@@ -186,6 +194,9 @@ class _EHImageState extends State<EHImage> {
                   child: GestureDetector(child: const Icon(Icons.sentiment_very_dissatisfied), onTap: state.reLoadImage),
                 );
           case LoadState.completed:
+            if (widget.enableOnlineColorization && _colorizedBytes == null && !_isColorizing) {
+              _triggerNetworkImageColorize(state);
+            }
             if (readSetting.enableAnime4K.isTrue && readSetting.enableAnime4KForNetwork.isTrue) {
               _triggerNetworkImageUpscale(state);
             }
@@ -239,6 +250,30 @@ class _EHImageState extends State<EHImage> {
       });
     } else {
       _isUpscaling = false;
+    }
+  }
+
+  /// 在线阅读：网络原图加载完成后，读取其磁盘缓存交由上色引擎后台处理，
+  /// 完成后用 setState 切换到上色后的内存图片（"先显示原图、上色完成后替换"）。
+  Future<void> _triggerNetworkImageColorize(ExtendedImageState state) async {
+    if (_colorizedBytes != null || _isColorizing) return;
+
+    final io.File? file = await getCachedImageFile(widget.galleryImage.url);
+    if (file == null) return;
+
+    _isColorizing = true;
+    final Uint8List? result = await colorizationService.colorizeOnlineFile(
+      file.path,
+      widget.galleryImage.url,
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _colorizedBytes = result;
+        _isColorizing = false;
+      });
+    } else {
+      _isColorizing = false;
     }
   }
 

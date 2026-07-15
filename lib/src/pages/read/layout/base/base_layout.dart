@@ -164,6 +164,7 @@ abstract class BaseLayout extends StatelessWidget {
         containerWidth: logic.readPageState.imageContainerSizes[index]?.width ?? logic.getPlaceHolderSize(index).width,
         containerHeight: logic.readPageState.imageContainerSizes[index]?.height ?? logic.getPlaceHolderSize(index).height,
         clearMemoryCacheWhenDispose: true,
+        enableOnlineColorization: logic.readPageState.useColorization,
         loadingProgressWidgetBuilder: (double progress) => _loadingProgressWidgetBuilder(index, progress),
         failedWidgetBuilder: (ExtendedImageState state) => _failedWidgetBuilder(index, state),
         completedWidgetBuilder: (state) => completedWidgetBuilderCallBack(index, state),
