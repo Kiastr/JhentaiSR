@@ -68,10 +68,10 @@ class ReadPageState with ScrollStatusListerState {
     parseImageUrlErrorMsg = List.generate(readPageInfo.pageCount, (_) => null);
 
     useSuperResolution = readPageInfo.useSuperResolution;
-    useColorization = readPageInfo.useColorization || readSetting.enableColorization;
+    useColorization = readPageInfo.useColorization || readSetting.enableColorization.value;
 
     // 阅读设置开启“AI 上色”且本地/已下载画廊尚未上色时，进入阅读即触发即时上色（边读边上）
-    if (readSetting.enableColorization &&
+    if (readSetting.enableColorization.value &&
         readPageInfo.gid != null &&
         (readPageInfo.mode == ReadMode.downloaded || readPageInfo.mode == ReadMode.archive)) {
       colorizationService.colorizeOnEntry(readPageInfo.gid!, readPageInfo.mode);
