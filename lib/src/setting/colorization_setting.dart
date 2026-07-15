@@ -19,7 +19,7 @@ class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLi
   RxnString modelDirectoryPath = RxnString();
 
   /// 当前选择的模型类型
-  Rx<ColorizationModelType> model = Rx<ColorizationModelType>(ColorizationModelType.DDColorInt8);
+  Rx<ColorizationModelType> model = Rx<ColorizationModelType>(ColorizationModelType.DeOldifyInt8);
 
   /// 渲染因子（render factor），控制模型内部处理分辨率
   RxInt renderFactor = 19.obs;
@@ -42,7 +42,7 @@ class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLi
 
     pythonPath.value = map['pythonPath'];
     modelDirectoryPath.value = map['modelDirectoryPath'];
-    model.value = map['model'] == null ? ColorizationModelType.DDColorInt8 : ColorizationModelType.values[map['model']];
+    model.value = map['model'] == null ? ColorizationModelType.DeOldifyInt8 : ColorizationModelType.values[map['model']];
     renderFactor.value = map['renderFactor'] ?? 19;
     useGPU.value = map['useGPU'] ?? true;
     numThreads.value = map['numThreads'] ?? 2;
@@ -127,6 +127,14 @@ enum ColorizationModelType {
     'https://huggingface.co/Jonny001/deepfake/resolve/main/deoldify_stable.onnx',
     '更自然稳定，人像/风景效果更好',
     'More natural and stable, better for portraits/landscapes',
+    'deoldify',
+  ),
+  DeOldifyInt8(
+    'DeOldify Int8',
+    'deoldify_int8.onnx',
+    'https://github.com/Kiastr/AiColorize/releases/download/models/deoldify_int8.onnx',
+    'int8 量化版 DeOldify，体积小、速度快，色彩鲜活，默认推荐',
+    'int8 quantized DeOldify, small and fast, vivid colors, default',
     'deoldify',
   ),
   DDColorTiny(
