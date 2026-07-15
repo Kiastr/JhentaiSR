@@ -5,6 +5,22 @@ allprojects {
     }
 }
 
+// Pin AndroidX artifacts below the AGP 8.9.1 requirement so the build stays
+// compatible with the project's AGP 8.3.1 / Gradle 8.4 toolchain.
+// Flutter 3.38.10 caps Gradle at 8.8 (Kotlin 2.0.20 -> [6.8.3, 8.9)), so AGP
+// cannot be raised to 8.9.1 (which needs Gradle >= 8.9). Recent AndroidX releases
+// (browser 1.9.0, core 1.17.0) declare minAgp 8.9.1 and fail :app:checkReleaseAarMetadata,
+// so we force the last pre-8.9.1-compatible versions.
+subprojects {
+    configurations.all {
+        resolutionStrategy {
+            force 'androidx.browser:browser:1.8.0'
+            force 'androidx.core:core:1.13.1'
+            force 'androidx.core:core-ktx:1.13.1'
+        }
+    }
+}
+
 rootProject.buildDir = '../build'
 
 // https://github.com/flutter/flutter/issues/153668
