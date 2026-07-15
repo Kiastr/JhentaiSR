@@ -10,7 +10,9 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../model/gallery_image.dart';
 import '../../model/gallery_thumbnail.dart';
+import '../../service/colorization_service.dart';
 import '../../service/gallery_download_service.dart';
+import '../../service/super_resolution_service.dart' show SuperResolutionType;
 import '../../setting/read_setting.dart';
 import '../../widget/loading_state_indicator.dart';
 
@@ -66,6 +68,13 @@ class ReadPageState with ScrollStatusListerState {
     parseImageUrlErrorMsg = List.generate(readPageInfo.pageCount, (_) => null);
 
     useSuperResolution = readPageInfo.useSuperResolution;
-    useColorization = readPageInfo.useColorization;
+    useColorization = readPageInfo.useColorization || readSetting.enableColorization;
+
+    // 阅读设置开启“AI 上色”且本地/已下载画廊尚未上色时，进入阅读即触发即时上色（边读边上）
+    if (readSetting.enableColorization &&
+        readPageInfo.gid != null &&
+        (readPageInfo.mode == ReadMode.downloaded || readPageInfo.mode == ReadMode.archive)) {
+      colorizationService.colorizeOnEntry(readPageInfo.gid!, readPageInfo.mode);
+    }
   }
 }

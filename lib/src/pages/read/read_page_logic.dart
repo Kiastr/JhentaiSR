@@ -592,6 +592,18 @@ class ReadPageLogic extends GetxController {
     log.info('toggle colorization mode: ${state.useColorization}');
     updateSafely([topMenuId]);
     layoutLogic.updateSafely([BaseLayoutLogic.pageId]);
+
+    // 阅读器内开启上色、但本画廊尚未上色时，触发即时上色（边读边上）
+    // 仅对本地/已下载画廊有效；在线阅读无本地文件会自动提示
+    if (state.useColorization) {
+      int gid = state.readPageInfo.gid!;
+      SuperResolutionType type = state.readPageInfo.mode == ReadMode.downloaded
+          ? SuperResolutionType.gallery
+          : SuperResolutionType.archive;
+      if (colorizationService.get(gid, type) == null) {
+        colorizationService.colorize(gid, type);
+      }
+    }
   }
 
   String getColorizationProgress() {

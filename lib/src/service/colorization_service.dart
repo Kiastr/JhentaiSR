@@ -24,8 +24,8 @@ import 'jh_service.dart';
 import 'log.dart';
 import 'path_service.dart';
 import 'super_resolution_service.dart' show SuperResolutionType;
+import '../model/read_page_info.dart';
 import '../utils/archive_util.dart';
-import '../utils/colorize/colorize_upscaler.dart';
 import '../utils/eh_executor.dart';
 import '../utils/toast_util.dart';
 import '../widget/loading_state_indicator.dart';
@@ -47,8 +47,11 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
 
   EHExecutor executor = EHExecutor(concurrency: 1);
 
-  /// 移动端使用 Dart 原生 ONNX 推理（不依赖 Python 环境）
-  bool get _useDartNative => !GetPlatform.isDesktop;
+  /// 移动端使用原生 Kotlin 上色引擎（经 MethodChannel 调用 OpenCV + ONNX Runtime + NNAPI），不依赖 Python 环境
+  bool get _useNativePlatform => !GetPlatform.isDesktop;
+
+  /// 与原生安卓上色引擎通信的 MethodChannel（见 android ColorizePlugin）
+  static const MethodChannel _colorizeChannel = MethodChannel('top.jtmonster.jhentai/colorize');
 
   /// 内存中的上色信息表: gid -> type -> info
   final Map<int, Map<int, ColorizationInfo>> _infoTable = {};
@@ -110,6 +113,18 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
 
   ColorizationInfo? get(int gid, SuperResolutionType type) {
     return _infoTable[gid]?[type.index];
+  }
+
+  /// 进入阅读页时调用：若阅读设置开启了“AI 上色”且本画廊尚未上色，则触发即时上色（边读边上）。
+  /// 返回 true 表示已发起上色任务，false 表示未触发（已上色或不满足条件）。
+  bool colorizeOnEntry(int gid, ReadMode mode) {
+    final SuperResolutionType type = mode == ReadMode.downloaded ? SuperResolutionType.gallery : SuperResolutionType.archive;
+    if (get(gid, type) != null) {
+      return false;
+    }
+    log.info('Colorize on entry: gid=$gid type=$type');
+    colorize(gid, type);
+    return true;
   }
 
   /// 下载并自动配置 Python 环境
@@ -359,8 +374,8 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
 
   /// 检查上色所需环境：Python 可执行文件、关键依赖、模型文件、脚本文件
   Future<String?> _checkEnvironment() async {
-    // 移动端：使用 Dart 原生 ONNX 推理，无需 Python，仅检查模型文件
-    if (_useDartNative) {
+    // 移动端：使用原生安卓引擎（OpenCV + ONNX Runtime），无需 Python，仅检查模型文件
+    if (_useNativePlatform) {
       String? modelDir = colorizationSetting.modelDirectoryPath.value;
       if (modelDir == null) {
         return '未设置上色模型目录，请先下载模型';
@@ -441,7 +456,7 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
         continue;
       }
 
-      if (_useDartNative) {
+      if (_useNativePlatform) {
         if (colorizationSetting.modelDirectoryPath.value == null) {
           return;
         }
@@ -491,9 +506,9 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
       return true;
     }
 
-    // 移动端：使用 Dart 原生 ONNX 推理
-    if (_useDartNative) {
-      return await _handleImageDart(rawImage);
+    // 移动端：调用原生安卓上色引擎（Kotlin + OpenCV + ONNX Runtime）
+    if (_useNativePlatform) {
+      return await _handleImageNative(rawImage);
     }
 
     Process? process;
@@ -588,11 +603,17 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
     );
   }
 
-  /// 移动端：使用 Dart 原生 ONNX Runtime 上色（不需要 Python）
-  /// 注意：ONNX Runtime 内部使用 FFI，与主 isolate 绑定，不能用 compute()。
-  /// 因此必须在主 isolate 上运行，并通过 await 让出主线程。
-  Future<bool> _handleImageDart(GalleryImage rawImage) async {
-    log.download('start to colorize image (Dart native) ${rawImage.path}');
+  /// 移动端：调用原生安卓上色引擎（Kotlin + OpenCV + ONNX Runtime + NNAPI）
+  /// 经 MethodChannel 把单张图片交给原生侧推理，返回是否成功。
+  Future<bool> _handleImageNative(GalleryImage rawImage) async {
+    if (!GetPlatform.isAndroid) {
+      // 当前仅实现安卓原生引擎；iOS 暂不支持，安全降级
+      toast('colorizeOnlyAndroid'.tr, isShort: false);
+      log.warning('Native colorization is only supported on Android');
+      return false;
+    }
+
+    log.download('start to colorize image (native) ${rawImage.path}');
 
     final String inputAbsolutePath =
         GalleryDownloadService.computeImageDownloadAbsolutePathFromRelativePath(rawImage.path!);
@@ -602,38 +623,50 @@ class ColorizationService extends GetxController with JHLifeCircleBeanErrorCatch
       colorizationSetting.model.value.fileName,
     );
 
-    final ColorizeModelType type = colorizationSetting.model.value.scriptType == 'deoldify'
-        ? ColorizeModelType.deoldify
-        : ColorizeModelType.ddcolor;
-
     try {
-      final params = ColorizeParams(
+      await _colorizeViaNative(
         inputPath: inputAbsolutePath,
         outputPath: outputAbsolutePath,
         modelPath: modelPath,
-        modelType: type,
-        threads: colorizationSetting.numThreads.value ?? 2,
+        type: colorizationSetting.model.value.scriptType,
+        useNnapi: colorizationSetting.useNNAPI.value ?? true,
       );
-
-      final bool success = type == ColorizeModelType.deoldify
-          ? await ColorizeUpscaler.colorizeDeOldify(params)
-          : await ColorizeUpscaler.colorizeDDColor(params);
-
-      if (!success) {
-        String errorMsg = '上色失败: ${rawImage.path}';
-        toast(errorMsg, isShort: false);
-        log.error(errorMsg);
-        return false;
-      }
-
       return true;
+    } on PlatformException catch (e) {
+      String errorMsg = '上色失败: ${rawImage.path}\n${e.message ?? e.toString()}';
+      toast(errorMsg, isShort: false);
+      log.error('Native colorization failed', e);
+      log.uploadError(e, extraInfos: {'rawImage': rawImage});
+      return false;
     } catch (e, s) {
       String errorMsg = '上色失败: ${rawImage.path}\n错误: $e';
       toast(errorMsg, isShort: false);
-      log.error('Dart colorization failed', e, s);
+      log.error('Native colorization failed', e, s);
       log.uploadError(e, extraInfos: {'rawImage': rawImage});
       return false;
     }
+  }
+
+  /// 通过 MethodChannel 调用原生安卓上色引擎
+  /// 成功返回输出图片路径；失败抛出 [PlatformException]
+  Future<String> _colorizeViaNative({
+    required String inputPath,
+    required String outputPath,
+    required String modelPath,
+    required String type,
+    required bool useNnapi,
+  }) async {
+    final String? result = await _colorizeChannel.invokeMethod<String>('colorize', {
+      'inputPath': inputPath,
+      'outputPath': outputPath,
+      'modelPath': modelPath,
+      'type': type,
+      'useNnapi': useNnapi,
+    });
+    if (result == null) {
+      throw PlatformException(code: 'NULL_RESULT', message: '原生引擎未返回输出路径');
+    }
+    return result;
   }
 
   void _checkInfoSourceExists() {

@@ -52,6 +52,9 @@ class ReadSetting with JHLifeCircleBeanWithConfigStorage implements JHLifeCircle
   RxDouble anime4KPushGradStrength = 1.0.obs;
   RxBool enableAnime4KForNetwork = false.obs;
 
+  /// 阅读时是否启用 AI 上色（已下载/本地画廊生效；开启后阅读器内可即时上色）
+  RxBool enableColorization = false.obs;
+
   bool get isInListReadDirection =>
       readDirection.value == ReadDirection.top2bottomList ||
       readDirection.value == ReadDirection.left2rightList ||
@@ -130,6 +133,7 @@ class ReadSetting with JHLifeCircleBeanWithConfigStorage implements JHLifeCircle
     anime4KPushStrength.value = map['anime4KPushStrength'] ?? anime4KPushStrength.value;
     anime4KPushGradStrength.value = map['anime4KPushGradStrength'] ?? anime4KPushGradStrength.value;
     enableAnime4KForNetwork.value = map['enableAnime4KForNetwork'] ?? enableAnime4KForNetwork.value;
+    enableColorization.value = map['enableColorization'] ?? enableColorization.value;
   }
 
   @override
@@ -172,6 +176,7 @@ class ReadSetting with JHLifeCircleBeanWithConfigStorage implements JHLifeCircle
       'anime4KPushStrength': anime4KPushStrength.value,
       'anime4KPushGradStrength': anime4KPushGradStrength.value,
       'enableAnime4KForNetwork': enableAnime4KForNetwork.value,
+      'enableColorization': enableColorization.value,
     });
   }
 
@@ -400,6 +405,12 @@ class ReadSetting with JHLifeCircleBeanWithConfigStorage implements JHLifeCircle
   Future<void> saveEnableAnime4KForNetwork(bool value) async {
     log.debug('saveEnableAnime4KForNetwork:$value');
     enableAnime4KForNetwork.value = value;
+    await saveBeanConfig();
+  }
+
+  Future<void> saveEnableColorization(bool value) async {
+    log.debug('saveEnableColorization:$value');
+    enableColorization.value = value;
     await saveBeanConfig();
   }
 }

@@ -427,6 +427,7 @@ class zh_TW {
       'stopColorization': '停止上色',
       'deleteColorizedImage': '刪除上色後的圖片',
       'autoColorize': '下載後自動上色',
+      'colorizeOnlyAndroid': 'AI 上色目前僅支援安卓端',
       'autoColorizeHint': '下載完成後自動呼叫 DeOldify 對圖片進行上色（需先在進階設定中下載模型並設定 Python）',
       'pythonPath': 'Python 路徑',
       'renderFactor': '渲染因子',

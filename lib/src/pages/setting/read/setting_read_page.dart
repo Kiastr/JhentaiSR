@@ -58,6 +58,7 @@ class SettingReadPage extends StatelessWidget {
               if (readSetting.isInListReadDirection) _buildTurnPageMode().fadeIn(const Key('turnPageMode')).center(),
               _buildImageSpace().center(),
               _buildAnime4KGroup(context).center(),
+              if (GetPlatform.isAndroid) _buildColorizationGroup(context).center(),
             ],
           ).withListTileTheme(context),
         ),
@@ -211,6 +212,19 @@ class SettingReadPage extends StatelessWidget {
             ),
           ).fadeIn(),
         ],
+      ],
+    );
+  }
+
+  Widget _buildColorizationGroup(BuildContext context) {
+    return Column(
+      children: [
+        SwitchListTile(
+          title: const Text('AI 上色'),
+          subtitle: const Text('阅读已下载画廊时自动/即时上色（需先下载模型）'),
+          value: readSetting.enableColorization.value,
+          onChanged: readSetting.saveEnableColorization,
+        ),
       ],
     );
   }

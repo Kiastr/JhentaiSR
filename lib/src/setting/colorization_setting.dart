@@ -19,16 +19,19 @@ class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLi
   RxnString modelDirectoryPath = RxnString();
 
   /// 当前选择的模型类型
-  Rx<ColorizationModelType> model = Rx<ColorizationModelType>(ColorizationModelType.Artistic);
+  Rx<ColorizationModelType> model = Rx<ColorizationModelType>(ColorizationModelType.DDColorInt8);
 
   /// 渲染因子（render factor），控制模型内部处理分辨率
   RxInt renderFactor = 19.obs;
 
-  /// 是否使用 GPU 加速
+  /// 是否使用 GPU 加速（桌面端 CUDA）
   RxBool useGPU = true.obs;
 
-  /// 推理线程数（移动端 Dart 原生 ONNX Runtime 使用）
+  /// 推理线程数（桌面端可选）
   RxnInt numThreads = RxnInt(2);
+
+  /// 移动端是否使用 NNAPI 加速（GPU/NPU 统一抽象，不支持时自动回退 CPU）
+  RxBool useNNAPI = true.obs;
 
   @override
   ConfigEnum get configEnum => ConfigEnum.colorizationSetting;
@@ -39,10 +42,11 @@ class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLi
 
     pythonPath.value = map['pythonPath'];
     modelDirectoryPath.value = map['modelDirectoryPath'];
-    model.value = map['model'] == null ? ColorizationModelType.Artistic : ColorizationModelType.values[map['model']];
+    model.value = map['model'] == null ? ColorizationModelType.DDColorInt8 : ColorizationModelType.values[map['model']];
     renderFactor.value = map['renderFactor'] ?? 19;
     useGPU.value = map['useGPU'] ?? true;
     numThreads.value = map['numThreads'] ?? 2;
+    useNNAPI.value = map['useNNAPI'] ?? true;
   }
 
   @override
@@ -54,6 +58,7 @@ class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLi
       'renderFactor': renderFactor.value,
       'useGPU': useGPU.value,
       'numThreads': numThreads.value,
+      'useNNAPI': useNNAPI.value,
     });
   }
 
@@ -98,6 +103,12 @@ class ColorizationSetting with JHLifeCircleBeanWithConfigStorage implements JHLi
     this.numThreads.value = numThreads;
     await saveBeanConfig();
   }
+
+  Future<void> saveUseNNAPI(bool useNNAPI) async {
+    log.debug('saveUseNNAPI:$useNNAPI');
+    this.useNNAPI.value = useNNAPI;
+    await saveBeanConfig();
+  }
 }
 
 /// 上色模型类型
@@ -124,6 +135,14 @@ enum ColorizationModelType {
     'https://huggingface.co/facefusion/models-3.0.0/resolve/main/ddcolor.onnx',
     'DDColor Tiny 版本，速度快，效果好',
     'DDColor Tiny version, fast and good quality',
+    'ddcolor',
+  ),
+  DDColorInt8(
+    'DDColor Int8',
+    'ddcolor-int8.onnx',
+    'https://github.com/Kiastr/AiColorize/releases/download/models/ddcolor-int8.onnx',
+    'int8 量化版，体积最小、速度最快，安卓首选',
+    'int8 quantized, smallest and fastest, recommended on Android',
     'ddcolor',
   );
 

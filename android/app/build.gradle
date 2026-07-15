@@ -69,7 +69,14 @@ android {
             } else {
                 signingConfig signingConfigs.debug
             }
+            // ONNX Runtime / OpenCV 含大量反射与 JNI，开启压缩时需保留符号
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+
+    // 若将来把 .onnx 模型打包进 assets，需禁止压缩避免读取失败
+    aaptOptions {
+        noCompress "onnx"
     }
 }
 
@@ -79,4 +86,8 @@ flutter {
 
 dependencies {
     implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.8.0"))
+    // OpenCV 官方 AAR（Maven Central），与原桌面 cv2 数值一致
+    implementation 'org.opencv:opencv:4.11.0'
+    // ONNX Runtime 安卓版，支持 NNAPI（GPU/NPU）加速
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.23.0'
 }

@@ -432,6 +432,7 @@ class ru_RU {
       'stopColorization': 'Остановить раскрашивание',
       'deleteColorizedImage': 'Удалить раскрашенное изображение',
       'autoColorize': 'Автоматически раскрашивать после загрузки',
+      'colorizeOnlyAndroid': 'ИИ-раскрашивание пока доступно только на Android',
       'autoColorizeHint': 'Автоматически раскрашивать изображения с помощью DeOldify после загрузки (требуется загрузка модели и настройка Python в расширенных настройках)',
       'pythonPath': 'Путь к Python',
       'renderFactor': 'Фактор рендеринга',

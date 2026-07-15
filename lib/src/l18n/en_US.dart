@@ -428,6 +428,7 @@ class en_US {
       'stopColorization': 'Stop Colorization',
       'deleteColorizedImage': 'Delete Colorized Image',
       'autoColorize': 'Auto Colorize After Download',
+      'colorizeOnlyAndroid': 'AI colorization is currently only available on Android',
       'autoColorizeHint': 'Automatically colorize images with DeOldify after download (requires model download and Python setup in Settings)',
       'pythonPath': 'Python Path',
       'renderFactor': 'Render Factor',

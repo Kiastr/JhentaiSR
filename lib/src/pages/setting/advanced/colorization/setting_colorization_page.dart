@@ -36,12 +36,13 @@ class SettingColorizationPage extends StatelessWidget {
             _buildInstruction(context),
             if (GetPlatform.isDesktop) _buildPythonPath(),
             if (GetPlatform.isDesktop) _buildDownloadPythonEnv(),
-            _buildModelDirectoryPath(),
-            _buildModelType(),
-            if (GetPlatform.isDesktop) _buildGPUConfig(),
-            _buildRenderFactor(),
-            _buildNumThreads(),
-          ],
+          _buildModelDirectoryPath(),
+          _buildModelType(),
+          if (GetPlatform.isDesktop) _buildGPUConfig(),
+          if (GetPlatform.isAndroid) _buildNNAPIConfig(),
+          _buildRenderFactor(),
+          _buildNumThreads(),
+        ],
         ).withListTileTheme(context),
       ),
     );
@@ -190,6 +191,17 @@ class SettingColorizationPage extends StatelessWidget {
     );
   }
 
+  Widget _buildNNAPIConfig() {
+    return ListTile(
+      title: const Text('NNAPI 加速'),
+      subtitle: const Text('使用 NNAPI 调用 GPU/NPU 加速（不支持时自动回退 CPU）'),
+      trailing: Switch(
+        value: colorizationSetting.useNNAPI.value,
+        onChanged: (v) => colorizationSetting.saveUseNNAPI(v),
+      ),
+    );
+  }
+
   Widget _buildRenderFactor() {
     return ListTile(
       title: Text('renderFactor'.tr),
@@ -218,7 +230,7 @@ class SettingColorizationPage extends StatelessWidget {
     return ListTile(
       title: Text('推理线程数'),
       subtitle: Text(!GetPlatform.isDesktop
-          ? 'Dart 原生 ONNX 推理线程数（手机建议 2-4）'
+          ? '当前原生引擎由 NNAPI 统一调度，此参数预留'
           : '推理线程数（桌面端可选）'),
       trailing: DropdownButton<int>(
         value: colorizationSetting.numThreads.value ?? 2,

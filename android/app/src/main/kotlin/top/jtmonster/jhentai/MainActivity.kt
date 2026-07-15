@@ -12,6 +12,7 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.EventChannel.EventSink
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugins.GeneratedPluginRegistrant
+import org.opencv.android.OpenCVLoader
 
 class MainActivity : FlutterFragmentActivity() {
     private var interceptVolumeEvent = false
@@ -19,6 +20,9 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         GeneratedPluginRegistrant.registerWith(flutterEngine)
+
+        // 注册原生上色插件（MethodChannel）：安卓端上色引擎（OpenCV + ONNX Runtime + NNAPI）
+        ColorizePlugin.registerWith(flutterEngine, applicationContext)
 
         volumeMethodChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -39,6 +43,11 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 加载 OpenCV 原生库（org.opencv:opencv AAR 内置 .so），必须在任何 cv:: 调用前完成
+        if (!OpenCVLoader.initDebug()) {
+            android.util.Log.w("JHenTai", "OpenCV initDebug() 失败，上色相关功能将不可用")
+        }
+
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

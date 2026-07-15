@@ -428,6 +428,7 @@ class zh_CN {
       'stopColorization': '停止上色',
       'deleteColorizedImage': '删除上色后的图片',
       'autoColorize': '下载后自动上色',
+      'colorizeOnlyAndroid': 'AI 上色目前仅支持安卓端',
       'autoColorizeHint': '下载完成后自动调用 DeOldify 对图片进行上色（需先在设置中下载模型并配置 Python）',
       'pythonPath': 'Python 路径',
       'renderFactor': '渲染因子',

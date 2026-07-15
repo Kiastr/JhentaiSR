@@ -427,6 +427,7 @@ class ko_KR {
       'stopColorization': '색상화 중지',
       'deleteColorizedImage': '색상화된 이미지 삭제',
       'autoColorize': '다운로드 후 자동 색상화',
+      'colorizeOnlyAndroid': 'AI 색상화는 현재 Android에서만 지원됩니다',
       'autoColorizeHint': '다운로드 완료 후 DeOldify로 이미지를 자동 색상화합니다(고급 설정에서 모델 다운로드 및 Python 설정 필요)',
       'pythonPath': 'Python 경로',
       'renderFactor': '렌더 팩터',

@@ -123,7 +123,6 @@ dependencies:
   xml: 6.5.0
   telegram: 0.0.9
   image: ^4.0.0
-  onnxruntime_v2: ^1.23.0
 
 dependency_overrides:
   chewie: 1.7.0

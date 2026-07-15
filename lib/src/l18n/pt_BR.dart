@@ -428,6 +428,7 @@ class pt_BR {
       'stopColorization': 'Parar Colorização',
       'deleteColorizedImage': 'Excluir Imagem Colorizada',
       'autoColorize': 'Colorir Automaticamente Após Download',
+      'colorizeOnlyAndroid': 'A colorização por IA está disponível apenas no Android',
       'autoColorizeHint': 'Colorir imagens automaticamente com DeOldify após o download (requer download do modelo e configuração do Python nas Configurações Avançadas)',
       'pythonPath': 'Caminho do Python',
       'renderFactor': 'Fator de Renderização',
